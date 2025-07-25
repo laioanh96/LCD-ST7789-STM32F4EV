@@ -47,6 +47,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+RTC_HandleTypeDef hrtc;
+
 SPI_HandleTypeDef hspi2;
 
 osThreadId blinkLEDTaskHandle;
@@ -58,6 +60,7 @@ osThreadId blinkLEDTaskHandle;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_SPI2_Init(void);
+static void MX_RTC_Init(void);
 void StartBlinkTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
@@ -98,93 +101,94 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_SPI2_Init();
+  MX_RTC_Init();
   /* USER CODE BEGIN 2 */
-	// включаем под�?ветку ди�?пле�? BLK
+  // включаем под�?ветку ди�?пле�? BLK
 //	HAL_GPIO_WritePin( BLK_GPIO_Port, BLK_Pin, GPIO_PIN_SET );
 
-	// ST7789 display initialization procedure
-	ST7789_Init();
+  // ST7789 display initialization procedure
+  ST7789_Init();
 
-	// Setting the display rotation is optional because mode 1 is set by default (there are 4 modes in total: 1, 2, 3, 4)
-	ST7789_rotation( 1 );
+  // Setting the display rotation is optional because mode 1 is set by default (there are 4 modes in total: 1, 2, 3, 4)
+  ST7789_rotation( 1 );
 
-	int hour = 12, minute = 34, second = 56; // Khởi tạo giờ phút giây ban đầu
+  int hour = 12, minute = 34, second = 56; // Khởi tạo gi�? phút giây ban đầu
 
-	// Vẽ nền và mặt đồng hồ chỉ 1 lần
-	ST7789_DrawImage(0, 0, 240, 240, logoRGB);
-	ST7789_DrawRectangleFilled(40, 40, 200, 200, RGB565(30, 30, 30));
-	ST7789_DrawRectangle(40, 40, 200, 200, ST7789_WHITE);
+  // Vẽ n�?n và mặt đồng hồ chỉ 1 lần
+  ST7789_DrawImage(0, 0, 240, 240, logoRGB);
+  ST7789_DrawRectangleFilled(40, 40, 200, 200, RGB565(30, 30, 30));
+  ST7789_DrawRectangle(40, 40, 200, 200, ST7789_WHITE);
 
-	// Vẽ các vạch giờ chỉ 1 lần
-	int cx = (40 + 200) / 2;
-	int cy = (40 + 200) / 2;
-	for (int i = 0; i < 12; i++) {
-	    float angle = (i * 30 - 90) * 3.14159f / 180.0f;
-	    int x1 = cx + (int)(60 * cosf(angle));
-	    int y1 = cy + (int)(60 * sinf(angle));
-	    int x2 = cx + (int)(70 * cosf(angle));
-	    int y2 = cy + (int)(70 * sinf(angle));
-	    ST7789_DrawLine(x1, y1, x2, y2, ST7789_WHITE);
-	}
+  // Vẽ các vạch gi�? chỉ 1 lần
+  int cx = (40 + 200) / 2;
+  int cy = (40 + 200) / 2;
+  for (int i = 0; i < 12; i++) {
+      float angle = (i * 30 - 90) * 3.14159f / 180.0f;
+      int x1 = cx + (int)(60 * cosf(angle));
+      int y1 = cy + (int)(60 * sinf(angle));
+      int x2 = cx + (int)(70 * cosf(angle));
+      int y2 = cy + (int)(70 * sinf(angle));
+      ST7789_DrawLine(x1, y1, x2, y2, ST7789_WHITE);
+  }
 
-	char timeStrOld[16] = "";
-	while (1) {
-	    // Xóa kim cũ bằng màu nền đồng hồ (hoặc vẽ đè)
-	    // (Có thể lưu lại tọa độ kim cũ để xóa chính xác hơn)
-	    // Ở đây đơn giản là vẽ lại vùng đồng hồ nhỏ quanh tâm
-	    ST7789_DrawRectangleFilled(cx-71, cy-71, cx+71, cy+71, RGB565(30, 30, 30));
-	    ST7789_DrawRectangle(40, 40, 200, 200, ST7789_WHITE);
-	    for (int i = 0; i < 12; i++) {
-	        float angle = (i * 30 - 90) * 3.14159f / 180.0f;
-	        int x1 = cx + (int)(60 * cosf(angle));
-	        int y1 = cy + (int)(60 * sinf(angle));
-	        int x2 = cx + (int)(70 * cosf(angle));
-	        int y2 = cy + (int)(70 * sinf(angle));
-	        ST7789_DrawLine(x1, y1, x2, y2, ST7789_WHITE);
-	    }
+  char timeStrOld[16] = "";
+  while (1) {
+      // Xóa kim cũ bằng màu n�?n đồng hồ (hoặc vẽ đè)
+      // (Có thể lưu lại t�?a độ kim cũ để xóa chính xác hơn)
+      // Ở đây đơn giản là vẽ lại vùng đồng hồ nh�? quanh tâm
+      ST7789_DrawRectangleFilled(cx-71, cy-71, cx+71, cy+71, RGB565(30, 30, 30));
+      ST7789_DrawRectangle(40, 40, 200, 200, ST7789_WHITE);
+      for (int i = 0; i < 12; i++) {
+          float angle = (i * 30 - 90) * 3.14159f / 180.0f;
+          int x1 = cx + (int)(60 * cosf(angle));
+          int y1 = cy + (int)(60 * sinf(angle));
+          int x2 = cx + (int)(70 * cosf(angle));
+          int y2 = cy + (int)(70 * sinf(angle));
+          ST7789_DrawLine(x1, y1, x2, y2, ST7789_WHITE);
+      }
 
-	    // Vẽ kim giờ
-	    float angle_h = ((hour % 12) + minute / 60.0f) * 30.0f - 90.0f;
-	    angle_h = angle_h * 3.14159f / 180.0f;
-	    int hx = cx + (int)(40 * cosf(angle_h));
-	    int hy = cy + (int)(40 * sinf(angle_h));
-	    ST7789_DrawLine(cx, cy, hx, hy, RGB565(255, 0, 0));
+      // Vẽ kim gi�?
+      float angle_h = ((hour % 12) + minute / 60.0f) * 30.0f - 90.0f;
+      angle_h = angle_h * 3.14159f / 180.0f;
+      int hx = cx + (int)(40 * cosf(angle_h));
+      int hy = cy + (int)(40 * sinf(angle_h));
+      ST7789_DrawLine(cx, cy, hx, hy, RGB565(255, 0, 0));
 
-	    // Vẽ kim phút
-	    float angle_m = (minute + second / 60.0f) * 6.0f - 90.0f;
-	    angle_m = angle_m * 3.14159f / 180.0f;
-	    int mx = cx + (int)(55 * cosf(angle_m));
-	    int my = cy + (int)(55 * sinf(angle_m));
-	    ST7789_DrawLine(cx, cy, mx, my, RGB565(0, 255, 0));
+      // Vẽ kim phút
+      float angle_m = (minute + second / 60.0f) * 6.0f - 90.0f;
+      angle_m = angle_m * 3.14159f / 180.0f;
+      int mx = cx + (int)(55 * cosf(angle_m));
+      int my = cy + (int)(55 * sinf(angle_m));
+      ST7789_DrawLine(cx, cy, mx, my, RGB565(0, 255, 0));
 
-	    // Vẽ kim giây
-	    float angle_s = second * 6.0f - 90.0f;
-	    angle_s = angle_s * 3.14159f / 180.0f;
-	    int sx = cx + (int)(65 * cosf(angle_s));
-	    int sy = cy + (int)(65 * sinf(angle_s));
-	    ST7789_DrawLine(cx, cy, sx, sy, RGB565(0, 200, 255));
+      // Vẽ kim giây
+      float angle_s = second * 6.0f - 90.0f;
+      angle_s = angle_s * 3.14159f / 180.0f;
+      int sx = cx + (int)(65 * cosf(angle_s));
+      int sy = cy + (int)(65 * sinf(angle_s));
+      ST7789_DrawLine(cx, cy, sx, sy, RGB565(0, 200, 255));
 
-	    // Vẽ tâm đồng hồ
-	    ST7789_DrawCircleFilled(cx, cy, 4, ST7789_WHITE);
+      // Vẽ tâm đồng hồ
+      ST7789_DrawCircleFilled(cx, cy, 4, ST7789_WHITE);
 
-	    // Xóa số cũ (vẽ đè bằng màu nền)
-	    ST7789_DrawRectangleFilled(70, 210, 170, 230, RGB565(30,30,30));
-	    // Hiển thị số giờ/phút/giây dạng số ở dưới
-	    char timeStr[16];
-	    sprintf(timeStr, "%02d:%02d:%02d", hour, minute, second);
-	    ST7789_print(70, 210, ST7789_CYAN, RGB565(30,30,30), 1, &Font_11x18, 1, timeStr);
+      // Xóa số cũ (vẽ đè bằng màu n�?n)
+      ST7789_DrawRectangleFilled(70, 210, 170, 230, RGB565(30,30,30));
+      // Hiển thị số gi�?/phút/giây dạng số ở dưới
+      char timeStr[16];
+      sprintf(timeStr, "%02d:%02d:%02d", hour, minute, second);
+      ST7789_print(70, 210, ST7789_CYAN, RGB565(30,30,30), 1, &Font_11x18, 1, timeStr);
 
-	    // Tăng thời gian (giả lập, nếu không có RTC)
-	    HAL_Delay(1);
-	    second++;
-	    if (second >= 60) { second = 0; minute++; }
-	    if (minute >= 60) { minute = 0; hour++; }
-	    if (hour >= 24)   { hour = 0; }
-	}
+      // Tăng th�?i gian (giả lập, nếu không có RTC)
+      HAL_Delay(1);
+      second++;
+      if (second >= 60) { second = 0; minute++; }
+      if (minute >= 60) { minute = 0; hour++; }
+      if (hour >= 24)   { hour = 0; }
+  }
 
-	ST7789_DrawImage( 0, 0, 240, 240, logoRGB );
+  ST7789_DrawImage( 0, 0, 240, 240, logoRGB );
 
-	// ST7789_print( 20, 220, RGB565(180, 0, 0) , RGB565(0, 10, 120) , 1, &Font_11x18, 1, "Oanh Love Giang" );
+  // ST7789_print( 20, 220, RGB565(180, 0, 0) , RGB565(0, 10, 120) , 1, &Font_11x18, 1, "Oanh Love Giang" );
 //				// // очи�?тка только буфера кадра  ( при етом �?ам �?кран не очищаеть�?�? )
 //				// //	#if FRAME_BUFFER	// е�?ли включен буфер кадра
 //				// //			ST7789_ClearFrameBuffer();
@@ -446,6 +450,7 @@ void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
 
   /** Configure the main internal regulator output voltage
   */
@@ -454,10 +459,16 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSE;
+  RCC_OscInitStruct.LSEState = RCC_LSE_ON;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLM = 8;
+  RCC_OscInitStruct.PLL.PLLN = 84;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+  RCC_OscInitStruct.PLL.PLLQ = 4;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -466,15 +477,55 @@ void SystemClock_Config(void)
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
   {
     Error_Handler();
   }
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_RTC;
+  PeriphClkInitStruct.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/**
+  * @brief RTC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_RTC_Init(void)
+{
+
+  /* USER CODE BEGIN RTC_Init 0 */
+
+  /* USER CODE END RTC_Init 0 */
+
+  /* USER CODE BEGIN RTC_Init 1 */
+
+  /* USER CODE END RTC_Init 1 */
+  /** Initialize RTC Only
+  */
+  hrtc.Instance = RTC;
+  hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
+  hrtc.Init.AsynchPrediv = 127;
+  hrtc.Init.SynchPrediv = 255;
+  hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
+  hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
+  hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
+  if (HAL_RTC_Init(&hrtc) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN RTC_Init 2 */
+
+  /* USER CODE END RTC_Init 2 */
+
 }
 
 /**
@@ -500,7 +551,7 @@ static void MX_SPI2_Init(void)
   hspi2.Init.CLKPolarity = SPI_POLARITY_HIGH;
   hspi2.Init.CLKPhase = SPI_PHASE_2EDGE;
   hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
   hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -525,8 +576,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitTypeDef GPIO_InitStruct = {0};
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
