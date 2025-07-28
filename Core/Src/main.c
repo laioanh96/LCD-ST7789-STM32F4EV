@@ -28,8 +28,12 @@
 #include "bitmap.h"
 #include "fonts.h"
 
-
+#include "lvgl.h"
 #include "stdio.h"
+#include "stdlib.h"  // Thêm cho malloc/free
+
+// Include LVGL examples
+#include "examples/lv_examples.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -52,6 +56,7 @@ RTC_HandleTypeDef hrtc;
 SPI_HandleTypeDef hspi2;
 
 osThreadId blinkLEDTaskHandle;
+osThreadId lvglTaskHandle;
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -62,6 +67,7 @@ static void MX_GPIO_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_RTC_Init(void);
 void StartBlinkTask(void const * argument);
+void StartLVGLTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -69,6 +75,75 @@ void StartBlinkTask(void const * argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+// LVGL display buffer và flush callback - minimal version
+static lv_disp_draw_buf_t draw_buf;
+static lv_color_t buf[240 * 1];  // Buffer cho chỉ 1 dòng pixel để tiết kiệm RAM
+
+// LVGL flush callback function - FIXED for direct drawing
+void my_disp_flush(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_color_t * color_p)
+{
+    int32_t x, y;
+    for (y = area->y1; y <= area->y2; y++) {
+        for (x = area->x1; x <= area->x2; x++) {
+            ST7789_DrawPixel(x, y, color_p->full);
+            color_p++;
+        }
+    }
+    // Không cần ST7789_Update() vì vẽ trực tiếp
+    lv_disp_flush_ready(disp_drv);
+}
+
+// Button definitions (PC0-PC4)
+#define BTN_UP    0  // PC0
+#define BTN_DOWN  1  // PC1  
+#define BTN_LEFT  2  // PC2
+#define BTN_RIGHT 3  // PC3
+#define BTN_ENTER 4  // PC4
+
+// Button state variables
+static uint32_t last_key = 0;
+static lv_indev_state_t last_state = LV_INDEV_STATE_REL;
+
+// Function to read button states
+uint32_t button_read(void)
+{
+    // Check each button (active LOW với pull-up)
+    if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_0) == GPIO_PIN_RESET) return BTN_UP;
+    if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_1) == GPIO_PIN_RESET) return BTN_DOWN;
+    if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_2) == GPIO_PIN_RESET) return BTN_LEFT;
+    if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_3) == GPIO_PIN_RESET) return BTN_RIGHT;
+    if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_4) == GPIO_PIN_RESET) return BTN_ENTER;
+    
+    return 0xFF; // No button pressed
+}
+
+// LVGL input device read callback
+void keypad_read(lv_indev_drv_t * indev_drv, lv_indev_data_t * data)
+{
+    static uint32_t last_btn = 0xFF;
+    uint32_t btn_pressed = button_read();
+    
+    if(btn_pressed != 0xFF) {
+        // Button is pressed
+        data->state = LV_INDEV_STATE_PR;
+        last_btn = btn_pressed;
+        
+        // Convert to LVGL keys
+        switch(btn_pressed) {
+            case BTN_UP:    data->key = LV_KEY_UP;    break;
+            case BTN_DOWN:  data->key = LV_KEY_DOWN;  break;
+            case BTN_LEFT:  data->key = LV_KEY_LEFT;  break;
+            case BTN_RIGHT: data->key = LV_KEY_RIGHT; break;
+            case BTN_ENTER: data->key = LV_KEY_ENTER; break;
+            default:        data->key = 0;           break;
+        }
+    } else {
+        // No button pressed
+        data->state = LV_INDEV_STATE_REL;
+        data->key = 0;
+    }
+}
 
 /* USER CODE END 0 */
 
@@ -103,348 +178,39 @@ int main(void)
   MX_SPI2_Init();
   MX_RTC_Init();
   /* USER CODE BEGIN 2 */
-	// включаем под�?ветку ди�?пле�? BLK
-//	HAL_GPIO_WritePin( BLK_GPIO_Port, BLK_Pin, GPIO_PIN_SET );
-
 	// ST7789 display initialization procedure
 	ST7789_Init();
-
-	// Setting the display rotation is optional because mode 1 is set by default (there are 4 modes in total: 1, 2, 3, 4)
+	// Setting the display rotation
 	ST7789_rotation( 1 );
 
-	int hour = 3, minute = 11, second = 30; // Khởi tạo gi�? phút giây ban đầu
-  static RTC_TimeTypeDef sTime;
-  static RTC_DateTypeDef sDate;
-	// Vẽ n�?n và mặt đồng hồ chỉ 1 lần
-  ST7789_DrawImage(0, 0, 240, 240, logoRGB);
-  // ST7789_DrawRectangleFilled(40, 40, 200, 200, RGB565(30, 30, 30));
-	ST7789_DrawRectangle(0, 0, 240, 240, ST7789_WHITE);
-	// Vẽ các vạch gi�? chỉ 1 lần
-	int cx = (0 + 240) / 2;
-	int cy = (0 + 240) / 2;
-	// for (int i = 0; i < 12; i++) {
-	//     float angle = (i * 30 - 90) * 3.14159f / 180.0f;
-	//     int x1 = cx + (int)(60 * cosf(angle));
-	//     int y1 = cy + (int)(60 * sinf(angle));
-	//     int x2 = cx + (int)(70 * cosf(angle));
-	//     int y2 = cy + (int)(70 * sinf(angle));
-	//     ST7789_DrawLine(x1, y1, x2, y2, ST7789_WHITE);
-  //   }
-  
-  for (int i = 0; i < 12; i++) {
-    float angle = (i * 30 - 90) * 3.14159f / 180.0f;
-    int x1 = cx + (int)(100 * cosf(angle));
-    int y1 = cy + (int)(100 * sinf(angle));
-    int x2 = cx + (int)(110 * cosf(angle));
-    int y2 = cy + (int)(110 * sinf(angle));
-    ST7789_DrawLine(x1, y1, x2, y2, ST7789_WHITE);
-    
-    // Vẽ số giờ
-    int num_x = cx + (int)(90 * cosf(angle)) - 8; // -8 để căn giữa số
-    int num_y = cy + (int)(90 * sinf(angle)) - 9; // -9 để căn giữa số
-    char numStr[3];
-    sprintf(numStr, "%d", (i == 0) ? 12 : i);
-    ST7789_print(num_x, num_y, ST7789_WHITE, RGB565(30,30,30), 1, &Font_11x18, 1, numStr);
-  }
-  ST7789_Update();
-  
-	char timeStrOld[16] = "";
-	while (1) {
-      HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-      HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+	// // Simple test để kiểm tra màn hình hoạt động
+	// ST7789_FillScreen(ST7789_RED);
+	// HAL_Delay(500);
+	// ST7789_FillScreen(ST7789_GREEN);
+	// HAL_Delay(500);
+	// ST7789_FillScreen(ST7789_BLUE);
+	// HAL_Delay(500);
+	// ST7789_FillScreen(ST7789_BLACK);
+	
+	// // Vẽ text test
+	// ST7789_print(10, 10, ST7789_WHITE, ST7789_BLACK, 0, &Font_11x18, 1, "ST7789 Ready!");
 
-      hour = sTime.Hours;
-      minute = sTime.Minutes;
-      second = sTime.Seconds;
-	    // Xóa kim cũ bằng màu n�?n đồng hồ (hoặc vẽ đè)
-	    // (Có thể lưu lại t�?a độ kim cũ để xóa chính xác hơn)
-	    // Ở đây đơn giản là vẽ lại vùng đồng hồ nh�? quanh tâm
-	    // ST7789_DrawRectangleFilled(cx-71, cy-71, cx+71, cy+71, RGB565(30, 30, 30));
-      ST7789_DrawImage(0, 0, 240, 240, logoRGB);
-	    // ST7789_DrawRectangle(0, 0, 239, 239, ST7789_WHITE);
-	    // for (int i = 0; i < 12; i++) {
-	    //     float angle = (i * 30 - 90) * 3.14159f / 180.0f;
-	    //     int x1 = cx + (int)(60 * cosf(angle));
-	    //     int y1 = cy + (int)(60 * sinf(angle));
-	    //     int x2 = cx + (int)(70 * cosf(angle));
-	    //     int y2 = cy + (int)(70 * sinf(angle));
-	    //     ST7789_DrawLine(x1, y1, x2, y2, ST7789_WHITE);
-      //   }
-      for (int i = 0; i < 12; i++) {
-        float angle = (i * 30 - 90) * 3.14159f / 180.0f;
-        int x1 = cx + (int)(100 * cosf(angle));
-        int y1 = cy + (int)(100 * sinf(angle));
-        int x2 = cx + (int)(110 * cosf(angle));
-        int y2 = cy + (int)(110 * sinf(angle));
-        // ST7789_DrawLine(x1, y1, x2, y2, ST7789_WHITE);
-        
-        // Vẽ số giờ
-        int num_x = cx + (int)(100 * cosf(angle)) - 8; // -8 để căn giữa số
-        int num_y = cy + (int)(100 * sinf(angle)) - 9; // -9 để căn giữa số
-        char numStr[3];
-        sprintf(numStr, "%d", (i == 0) ? 12 : i);
-        // ST7789_print(num_x, num_y, ST7789_WHITE, RGB565(30,30,30), 1, &Font_11x18, 1, numStr);
-        ST7789_print(num_x, num_y, ST7789_WHITE, RGB565(30,30,30), 0, &Font_11x18, 2, numStr);
-      }
-	    // Vẽ kim giờ
-	    float angle_h = ((hour % 12) + minute / 60.0f) * 30.0f - 90.0f;
-	    angle_h = angle_h * 3.14159f / 180.0f;
-	    int hx = cx + (int)(60 * cosf(angle_h));
-	    int hy = cy + (int)(60 * sinf(angle_h));
-      ST7789_DrawLineThick(cx, cy, hx, hy, RGB565(255, 0, 0), 6);
-      // ST7789_DrawLine(cx, cy, hx, hy, RGB565(255, 0, 0));
-	    // Vẽ kim phút
-	    float angle_m = (minute + second / 60.0f) * 6.0f - 90.0f;
-	    angle_m = angle_m * 3.14159f / 180.0f;
-	    int mx = cx + (int)(90 * cosf(angle_m));
-	    int my = cy + (int)(90 * sinf(angle_m));
-	    // ST7789_DrawLine(cx, cy, mx, my, RGB565(0, 255, 0));
-      ST7789_DrawLineThick(cx, cy, mx, my, RGB565(0, 255, 0), 4);
-
-	    // Vẽ kim giây
-	    float angle_s = second * 6.0f - 90.0f;
-	    angle_s = angle_s * 3.14159f / 180.0f;
-	    int sx = cx + (int)(110 * cosf(angle_s));
-	    int sy = cy + (int)(110 * sinf(angle_s));
-	    // ST7789_DrawLine(cx, cy, sx, sy, RGB565(0, 200, 255));
-      ST7789_DrawLineThick(cx, cy, sx, sy, RGB565(0, 200, 255), 2);
-
-	    // Vẽ tâm đồng hồ
-	    ST7789_DrawCircleFilled(cx, cy, 4, ST7789_WHITE);
-
-	    // Xóa số cũ (vẽ đè bằng màu n�?n)
-	    // ST7789_DrawRectangleFilled(70, 210, 170, 230, RGB565(30,30,30));
-      // ST7789_DrawImage(70, 210, 100, 20, logoRGB + 210 * 240 + 70);
-	    // Hiển thị số gi�?/phút/giây dạng số ở dưới
-	    char timeStr[16];
-	    sprintf(timeStr, "%02d:%02d:%02d", hour, minute, second);
-	    // ST7789_print(70, 210, ST7789_CYAN, RGB565(30,30,30), 0, &Font_11x18, 1, timeStr);
-      // ST7789_print(70, 210, ST7789_CYAN, RGB565(30,30,30), 0, &Font_11x18, 1, timeStr);
-      
-      ST7789_Update();
-
-	    // Tăng th�?i gian (giả lập, nếu không có RTC)
-//	    HAL_Delay(1);
-	    // second++;
-	    if (second >= 60) { second = 0; minute++; }
-	    if (minute >= 60) { minute = 0; hour++; }
-	    if (hour >= 24)   { hour = 0; }
-	}
-
-	// ST7789_DrawImage( 0, 0, 240, 240, logoRGB );
-
-	// ST7789_print( 20, 220, RGB565(180, 0, 0) , RGB565(0, 10, 120) , 1, &Font_11x18, 1, "Oanh Love Giang" );
-//				// // очи�?тка только буфера кадра  ( при етом �?ам �?кран не очищаеть�?�? )
-//				// //	#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//				// //			ST7789_ClearFrameBuffer();
-//				// //	#endif
-//
-//				// // закрашиваем ве�?ь �?кран указаным цветом
-//				// ST7789_FillScreen( RGB565(255, 0, 0) );
-//				// //#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//				// //		ST7789_Update();
-//				// //#endif
-//				// HAL_Delay (2000);
-//				// // закрашиваем ве�?ь �?кран указаным цветом
-//				// ST7789_FillScreen( RGB565(0, 255, 0) );
-//				// //#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//				// //		ST7789_Update();
-//				// //#endif
-//				// HAL_Delay (2000);
-//				// // закрашиваем ве�?ь �?кран указаным цветом
-//				// ST7789_FillScreen( RGB565(0, 0, 255) );
-//				// //#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//				// //		ST7789_Update();
-//				// //#endif
-//				// HAL_Delay (2000);
-//
-//				// // пр�?моугольник закрашеный ( координата X и Y ( начина�? �? 0 ) ширина и вы�?ота в пик�?ел�?х )
-//				// ST7789_DrawRectangleFilled(0, 0, 240, 240, RGB565(255, 255, 255)) ;
-//				// //#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//				// //		ST7789_Update();
-//				// //#endif
-//				// HAL_Delay (1000);
-//
-//				// for( uint8_t i = 0; i< 240; i+=3){
-//				// 	// пр�?моугольник закрашеный ( координата X и Y ( начина�? �? 0 ) ширина и вы�?ота в пик�?ел�?х )
-//				// 	ST7789_DrawRectangleFilled(i, i, 240-i, 240-i, RGB565(i/2, 255-i, 0+i)) ;
-//				// }
-//				// //#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//				// //		ST7789_Update();
-//				// //#endif
-//
-//				// for( uint8_t i = 0; i< 120; i+=3){
-//				// 	// пр�?моугольник пу�?тотелый ( координата X и Y ( начина�? �? 0 ) ширина и вы�?ота в пик�?ел�?х )
-//				// 	ST7789_DrawRectangle(i, i, 240-i, 240-i, RGB565(255, 0, 0)) ;
-//				// }
-//				// //#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//				// //		ST7789_Update();
-//				// //#endif
-//
-//				// HAL_Delay (2000);
-//
-//
-//		// ри�?уем цветную иконку. параметры координаты х и у ( начина�? �? 0 ), размер иконки шир и вы�?, им�? иконки ( ма�?�?ив )
-//		//	ST7789_DrawImage( 80, 80, 85, 53, logoRGB	);
-//		//#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//		//		ST7789_Update();
-//		//#endif
-//
-//	// закрашиваем ве�?ь �?кран указаным цветом
-//	ST7789_FillScreen( RGB565(0, 10, 100) );
-//	//#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//	//		ST7789_Update();
-//	//#endif
-//
-//	// печатаем �?имвол ( один ) параметры: х,  у, ( начина�? �? 0 ),  цвет �?имвола, цвет фона, вкл/выкл фон, размер шрифта, множитель шрифта (увеличивает в х раз шрифт ), �?ам �?имвол ( поддерживает кириллицу )
-//	// ST7789_DrawChar( 20, 20, RGB565( 255, 255, 255 ) , RGB565( 0, 10, 10 ) , 0, &Font_16x26, 3, 'F' );
-//	//#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//	//		ST7789_Update();
-//	//#endif
-//
-//	// печатаем �?троку параметры: х,  у, ( начина�? �? 0 ), цвет �?троки, цвет фона, вкл/выкл фон, размер шрифта, множитель шрифта (увеличивает в х раз шрифт ), �?ама �?трока ( поддерживает кириллицу )
-//	ST7789_print( 50, 20, RGB565(255, 255, 255) , RGB565(0, 10, 100) , 1, &Font_16x26, 1, "STM32 TFT" );
-//	//#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//	//		ST7789_Update();
-//	//#endif
-//
-//	// печатаем �?троку параметры: х,  у, ( начина�? �? 0 ),  цвет �?троки, цвет фона, вкл/выкл фон, размер шрифта, множитель шрифта (увеличивает в х раз шрифт ), �?ама �?трока ( поддерживает кириллицу )
-//	ST7789_print( 10, 160, RGB565(255, 0, 0) , RGB565(0, 10, 100) , 1, &Font_11x18, 1, "Tôi là tên là Oanh" );
-//	//#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//	//		ST7789_Update();
-//	//#endif
-//
-//	// печатаем �?троку параметры: х,  у, ( начина�? �? 0 ),  цвет �?троки, цвет фона, вкл/выкл фон, размер шрифта, множитель шрифта (увеличивает в х раз шрифт ), �?ама �?трока ( поддерживает кириллицу )
-//	ST7789_print( 8, 200, RGB565(0, 255, 0) , RGB565(0, 10, 100) , 1, &Font_7x9, 2, "ST7789 : 240x320" );
-//	//#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//	//		ST7789_Update();
-//	//#endif
-//
-//	// печатаем �?имвол �? указаным углом, параметры: х,  у, ( начина�? �? 0 ), цвет �?троки, цвет фона, вкл/выкл фон, размер шрифта, множитель шрифта (увеличивает в х раз шрифт ), угол поворота (0.0 - 360.0), �?ам�?имвол ( поддерживает кириллицу )
-//	ST7789_DrawCharWithAngle( 50, 50, RGB565(255, 255, 255) , RGB565(0, 10, 100) , 1, &Font_11x18, 1, 90.0, 'R' );
-//	//#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//	//		ST7789_Update();
-//	//#endif
-//
-//	// печатаем �?троку �? указаным углом, параметры: х,  у, ( начина�? �? 0 ), цвет �?троки, цвет фона, вкл/выкл фон, размер шрифта, множитель шрифта (увеличивает в х раз шрифт ), угол поворота (0.0 - 360.0), �?ама �?трока ( поддерживает кириллицу )
-//	ST7789_printWithAngle( 100, 100, RGB565(255, 255, 255) , RGB565(0, 10, 100) , 1, &Font_11x18, 1, 180.0, "STM32 TFT" );
-//	//#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//	//		ST7789_Update();
-//	//#endif
-//
-//	// ри�?уем цветную иконку. параметры координаты х и у ( начина�? �? 0 ), размер иконки шир и вы�?, им�? иконки ( ма�?�?ив )
-//	ST7789_DrawImage( 0, 0, 240, 240, logoRGB );
-//	//#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//	//		ST7789_Update();
-//	//#endif
-//
-//	// очи�?тка �?крана - закрашивает �?кран цветом черный
-//	//ST7789_Clear();
-//	// очи�?тка только буфера кадра  ( при етом �?ам �?кран не очищаеть�?�? )
-//	//	#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//	//			ST7789_ClearFrameBuffer();
-//	//	#endif
-//
-//	// ри�?уем монохромную иконку. параметры координаты х и у ( начина�? �? 0 ), им�? иконки ( ма�?�?ив ), размер иконки шир и вы�?, цвет отображени�?
-//	//ST7789_DrawBitmap( 60, 200, logo, 128, 27, RGB565(255, 0, 0) );
-//	//#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//	//		ST7789_Update();
-//	//#endif
-//
-//	// ри�?уем монохромную иконку �? указаным углом поворота, параметры координаты х и у ( начина�? �? 0 ), им�? иконки ( ма�?�?ив ), размер иконки шир и вы�?, цвет отображени�?, угол поворота (0-360)
-//	ST7789_DrawBitmapWithAngle( 60, 150, logo, 128, 27, RGB565(255, 255, 255), 10.0 );
-//	//#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//	//		ST7789_Update();
-//	//#endif
-//
-//	// очи�?тка �?крана - закрашивает �?кран цветом черный
-//	//ST7789_Clear();
-//
-//	// круг пу�?тотелый
-//	//ST7789_DrawCircle(50, 100, 50, RGB565(255, 0, 255));
-//	//#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//	//		ST7789_Update();
-//	//#endif
-//
-//	// круг закрашеный
-//	//ST7789_DrawCircleFilled(50, 290, 20, RGB565(255, 40, 255)) ;
-//
-//	// ри�?уем �?лип�? ( координаты центра, радиу�? по Х радиу�? по У, цвет )
-//	ST7789_DrawEllipse( 150, 150, 20, 80, RGB565(0, 0, 255) );
-//
-//	// ри�?уем �?лип�? закрашенный ( координаты центра, радиу�? по Х радиу�? по У, цвет )
-//	ST7789_DrawEllipseFilled( 150, 150, 80, 20, RGB565(0, 0, 255) );
-//
-//	// ри�?уем �?лип�? под указаным углом наклона ( координаты центра, радиу�? по Х радиу�? по У, угол поворота (0-360), цвет )
-//	ST7789_DrawEllipseWithAngle( 150, 150, 80, 20, 45.0, RGB565(0, 0, 255) );
-//
-//	// ри�?уем �?лип�? закрашенный под указаным углом наклона ( координаты центра, радиу�? по Х радиу�? по У, угол поворота (0-360), цвет )
-//	ST7789_DrawEllipseFilledWithAngle( 150, 150, 80, 20, 200.0, RGB565(0, 255, 0) );
-//
-//	// лини�?
-//	//ST7789_DrawLine(1, 319, 239, 319, RGB565(255, 255, 0));
-//
-//	// ри�?уем линию �? указаным углом и длиной ( начальные координаты, длина линии, угол поворота (0-360), и цвет линии )
-//	ST7789_DrawLineWithAngle(100, 100, 50, 45.0, RGB565(255, 255, 255));
-//
-//	// пр�?моугольник закрашеный
-//	//ST7789_DrawRectangleFilled(90, 265, 140, 310, RGB565(0, 255, 0)) ;
-//
-//	// пр�?моугольник пу�?тотелый
-//	//ST7789_DrawRectangle(160, 265, 220, 309, RGB565(255, 255, 255)) ;
-//
-//	// ри�?уем треугольник пу�?тотелый
-//	//ST7789_DrawTriangle(60, 40, 150, 100, 200, 200, RGB565(100, 255, 150) );
-//
-//	// ри�?уем треугольник закрашеный
-//	//ST7789_DrawFilledTriangle(20, 40, 150, 100, 200, 200, RGB565(100, 255, 150) );
-//
-//	// ри�?уем пр�?моугольник �? закругленными кра�?ми ( закрашенный )
-//	//ST7789_DrawFillRoundRect(10, 10, 50, 50, 10, RGB565(100, 255, 150));
-//
-//	// ри�?уем пр�?моугольник �? закругленными кра�?ми ( пу�?тотелый )
-//	//ST7789_DrawRoundRect(10, 10, 50, 50, 10, RGB565(100, 255, 150));
-//
-//	// ри�?уем полукруг ( правое или левое полушарие (параметр 1 или 2) ) закрашенный
-//	//ST7789_DrawFillCircleHelper(30, 30, 20 , 1, 0, RGB565(100, 255, 150));
-//
-//	// ри�?уем дугу ( четверть круга (параметр 1, 2, 4, 8) ) шириной 1 пик�?ель
-//	//ST7789_DrawCircleHelper(30, 30, 20 , 1, RGB565(100, 255, 150));
-//	//#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//	//		ST7789_Update();
-//	//#endif
-//
-//	// переход в �?п�?щий режим
-//	//ST7789_SleepModeEnter();
-//
-//	// выход их �?п�?щего режима
-//	//ST7789_SleepModeExit();
-//
-//	// вкл/выкл ди�?пле�? 0-выкл 1- вкл
-//	//ST7789_DisplayPower( 1 );
-//
-//	// инвер�?и�? цветов 0-вкл  1-выкл
-//	//ST7789_InversionMode(1);
-//
-//	// ри�?ованиe дуга тол�?та�? ( ча�?ть круга ) ( координаты центра, радиу�?, начальный и конечный угол (0-360), цвет линии, толщина линии)
-//	// е�?ли нужно нари�?овать наоборот другую ча�?ть то мен�?ем начальный угол и конечный ме�?тами
-//	ST7789_DrawArc(100, 100, 50, 320, 220, RGB565(255, 255, 0), 5);
-//	ST7789_DrawArc(100, 100, 50, 220, 320, RGB565(255, 0, 255), 5);
-//	//#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//	//		ST7789_Update();
-//	//#endif
-//
-//	// лини�? тол�?та�? ( по�?ледний параметр толшина )
-//	ST7789_DrawLineThick(10, 120, 200, 140, RGB565(255, 255, 0), 5);
-//	//#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//	//		ST7789_Update();
-//	//#endif
-//
-//	// лини�? тол�?та�? нужной длины и указаным углом поворота (0-360) ( по�?ледний параметр толшина )
-//	ST7789_DrawLineThickWithAngle( 100, 100, 80, 90.0, RGB565(255, 255, 0), 10 );
-//	//#if FRAME_BUFFER	// е�?ли включен буфер кадра
-//	//		ST7789_Update();
-//	//#endif
+	/*
+	// LVGL initialization - MOVED TO TASK TO AVOID DUPLICATE
+	lv_init();
+	
+	// Display buffer initialization  
+	lv_disp_draw_buf_init(&draw_buf, buf, NULL, 240 * 1);
+	
+	// Display driver initialization
+	static lv_disp_drv_t disp_drv;
+	lv_disp_drv_init(&disp_drv);
+	disp_drv.hor_res = 240;
+	disp_drv.ver_res = 240;
+	disp_drv.flush_cb = my_disp_flush;
+	disp_drv.draw_buf = &draw_buf;
+	lv_disp_drv_register(&disp_drv);
+	*/
   /* USER CODE END 2 */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -465,8 +231,12 @@ int main(void)
 
   /* Create the thread(s) */
   /* definition and creation of blinkLEDTask */
-  osThreadDef(blinkLEDTask, StartBlinkTask, osPriorityNormal, 0, 128);
+  osThreadDef(blinkLEDTask, StartBlinkTask, osPriorityNormal, 0, 64);  // Giảm từ 128->64
   blinkLEDTaskHandle = osThreadCreate(osThread(blinkLEDTask), NULL);
+
+  /* definition and creation of lvglTask */
+  osThreadDef(lvglTask, StartLVGLTask, osPriorityNormal, 0, 512);  // Tăng từ 256->512
+  lvglTaskHandle = osThreadCreate(osThread(lvglTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -646,6 +416,14 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
+  /* Configure Button pins as inputs */
+  /*UP button: PC0, DOWN button: PC1, LEFT: PC2, RIGHT: PC3, ENTER: PC4*/
+  __HAL_RCC_GPIOC_CLK_ENABLE();  // Thêm clock enable cho GPIOC
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;  // Pull-up, button press = LOW
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
 }
 
 /* USER CODE BEGIN 4 */
@@ -669,6 +447,82 @@ void StartBlinkTask(void const * argument)
     osDelay(500);
   }
   /* USER CODE END 5 */
+}
+
+/* USER CODE BEGIN Header_StartLVGLTask */
+/**
+  * @brief  Function implementing the lvglTask thread.
+  * @param  argument: Not used
+  * @retval None
+  */
+/* USER CODE END Header_StartLVGLTask */
+void StartLVGLTask(void const * argument)
+{
+  /* USER CODE BEGIN StartLVGLTask */
+  
+  // Bước 1: Init LVGL
+  lv_init();
+
+  // Bước 2: Init display driver  
+  lv_disp_draw_buf_init(&draw_buf, buf, NULL, 240 * 1);
+
+  // Bước 3: Init display driver
+  static lv_disp_drv_t disp_drv;
+  lv_disp_drv_init(&disp_drv);         // Khởi tạo với default values
+  disp_drv.hor_res = 240;              // Độ phân giải ngang
+  disp_drv.ver_res = 240;              // Độ phân giải dọc
+  disp_drv.flush_cb = my_disp_flush;   // Callback để vẽ lên LCD
+  disp_drv.draw_buf = &draw_buf;       // Gán buffer đã tạo
+  lv_disp_drv_register(&disp_drv);     // Đăng ký driver với LVGL
+
+  // Initialize default theme
+  lv_theme_t * theme = lv_theme_default_init(
+      lv_disp_get_default(),           // Display mặc định
+      lv_palette_main(LV_PALETTE_BLUE), // Primary color
+      lv_palette_main(LV_PALETTE_RED),  // Secondary color  
+      LV_THEME_DEFAULT_DARK,           // Dark/Light mode
+      LV_FONT_DEFAULT                  // Font mặc định
+  );
+  lv_disp_set_theme(lv_disp_get_default(), theme);
+
+  // Setup input device (keypad/buttons)  
+  static lv_indev_drv_t indev_drv;
+  lv_indev_drv_init(&indev_drv);       // Khởi tạo input driver
+  indev_drv.type = LV_INDEV_TYPE_KEYPAD; // Loại input: keypad
+  indev_drv.read_cb = keypad_read;     // Callback đọc button
+  lv_indev_t * indev = lv_indev_drv_register(&indev_drv);
+
+  // Tạo group cho input navigation
+  lv_group_t * g = lv_group_create();  // Tạo group để navigate
+  lv_indev_set_group(indev, g);        // Gán group cho input device
+
+  
+  // Test button với màu explicit trước
+  lv_obj_t * btn = lv_btn_create(lv_scr_act());
+
+  lv_obj_set_size(btn, 120, 50);
+  lv_obj_align(btn, LV_ALIGN_CENTER, 0, -30);
+  lv_obj_set_style_bg_color(btn, lv_color_hex(0x0080ff), LV_PART_MAIN); // Xanh dương
+  lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN);
+  
+  lv_obj_t * label = lv_label_create(btn);
+  lv_label_set_text(label, "Test Button");
+  lv_obj_center(label);
+  
+  // Thêm vào group để có thể focus
+  lv_group_add_obj(g, btn);
+
+  // Chạy example button
+  lv_example_btn_1();
+  
+  /* Infinite loop */
+  for(;;)
+  {
+    // Chạy LVGL timer handler
+    lv_timer_handler();
+    osDelay(10);  // LVGL cần chạy thường xuyên
+  }
+  /* USER CODE END StartLVGLTask */
 }
 
  /**
