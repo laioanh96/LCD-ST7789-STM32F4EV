@@ -103,92 +103,137 @@ int main(void)
   MX_SPI2_Init();
   MX_RTC_Init();
   /* USER CODE BEGIN 2 */
-  // включаем под�?ветку ди�?пле�? BLK
+	// включаем под�?ветку ди�?пле�? BLK
 //	HAL_GPIO_WritePin( BLK_GPIO_Port, BLK_Pin, GPIO_PIN_SET );
 
-  // ST7789 display initialization procedure
-  ST7789_Init();
+	// ST7789 display initialization procedure
+	ST7789_Init();
 
-  // Setting the display rotation is optional because mode 1 is set by default (there are 4 modes in total: 1, 2, 3, 4)
-  ST7789_rotation( 1 );
+	// Setting the display rotation is optional because mode 1 is set by default (there are 4 modes in total: 1, 2, 3, 4)
+	ST7789_rotation( 1 );
 
-  int hour = 12, minute = 34, second = 56; // Khởi tạo gi�? phút giây ban đầu
-
-  // Vẽ n�?n và mặt đồng hồ chỉ 1 lần
+	int hour = 3, minute = 11, second = 30; // Khởi tạo gi�? phút giây ban đầu
+  static RTC_TimeTypeDef sTime;
+  static RTC_DateTypeDef sDate;
+	// Vẽ n�?n và mặt đồng hồ chỉ 1 lần
   ST7789_DrawImage(0, 0, 240, 240, logoRGB);
-  ST7789_DrawRectangleFilled(40, 40, 200, 200, RGB565(30, 30, 30));
-  ST7789_DrawRectangle(40, 40, 200, 200, ST7789_WHITE);
-
-  // Vẽ các vạch gi�? chỉ 1 lần
-  int cx = (40 + 200) / 2;
-  int cy = (40 + 200) / 2;
+  // ST7789_DrawRectangleFilled(40, 40, 200, 200, RGB565(30, 30, 30));
+	ST7789_DrawRectangle(0, 0, 240, 240, ST7789_WHITE);
+	// Vẽ các vạch gi�? chỉ 1 lần
+	int cx = (0 + 240) / 2;
+	int cy = (0 + 240) / 2;
+	// for (int i = 0; i < 12; i++) {
+	//     float angle = (i * 30 - 90) * 3.14159f / 180.0f;
+	//     int x1 = cx + (int)(60 * cosf(angle));
+	//     int y1 = cy + (int)(60 * sinf(angle));
+	//     int x2 = cx + (int)(70 * cosf(angle));
+	//     int y2 = cy + (int)(70 * sinf(angle));
+	//     ST7789_DrawLine(x1, y1, x2, y2, ST7789_WHITE);
+  //   }
+  
   for (int i = 0; i < 12; i++) {
-      float angle = (i * 30 - 90) * 3.14159f / 180.0f;
-      int x1 = cx + (int)(60 * cosf(angle));
-      int y1 = cy + (int)(60 * sinf(angle));
-      int x2 = cx + (int)(70 * cosf(angle));
-      int y2 = cy + (int)(70 * sinf(angle));
-      ST7789_DrawLine(x1, y1, x2, y2, ST7789_WHITE);
+    float angle = (i * 30 - 90) * 3.14159f / 180.0f;
+    int x1 = cx + (int)(100 * cosf(angle));
+    int y1 = cy + (int)(100 * sinf(angle));
+    int x2 = cx + (int)(110 * cosf(angle));
+    int y2 = cy + (int)(110 * sinf(angle));
+    ST7789_DrawLine(x1, y1, x2, y2, ST7789_WHITE);
+    
+    // Vẽ số giờ
+    int num_x = cx + (int)(90 * cosf(angle)) - 8; // -8 để căn giữa số
+    int num_y = cy + (int)(90 * sinf(angle)) - 9; // -9 để căn giữa số
+    char numStr[3];
+    sprintf(numStr, "%d", (i == 0) ? 12 : i);
+    ST7789_print(num_x, num_y, ST7789_WHITE, RGB565(30,30,30), 1, &Font_11x18, 1, numStr);
   }
+  ST7789_Update();
+  
+	char timeStrOld[16] = "";
+	while (1) {
+      HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+      HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
 
-  char timeStrOld[16] = "";
-  while (1) {
-      // Xóa kim cũ bằng màu n�?n đồng hồ (hoặc vẽ đè)
-      // (Có thể lưu lại t�?a độ kim cũ để xóa chính xác hơn)
-      // Ở đây đơn giản là vẽ lại vùng đồng hồ nh�? quanh tâm
-      ST7789_DrawRectangleFilled(cx-71, cy-71, cx+71, cy+71, RGB565(30, 30, 30));
-      ST7789_DrawRectangle(40, 40, 200, 200, ST7789_WHITE);
+      hour = sTime.Hours;
+      minute = sTime.Minutes;
+      second = sTime.Seconds;
+	    // Xóa kim cũ bằng màu n�?n đồng hồ (hoặc vẽ đè)
+	    // (Có thể lưu lại t�?a độ kim cũ để xóa chính xác hơn)
+	    // Ở đây đơn giản là vẽ lại vùng đồng hồ nh�? quanh tâm
+	    // ST7789_DrawRectangleFilled(cx-71, cy-71, cx+71, cy+71, RGB565(30, 30, 30));
+      ST7789_DrawImage(0, 0, 240, 240, logoRGB);
+	    // ST7789_DrawRectangle(0, 0, 239, 239, ST7789_WHITE);
+	    // for (int i = 0; i < 12; i++) {
+	    //     float angle = (i * 30 - 90) * 3.14159f / 180.0f;
+	    //     int x1 = cx + (int)(60 * cosf(angle));
+	    //     int y1 = cy + (int)(60 * sinf(angle));
+	    //     int x2 = cx + (int)(70 * cosf(angle));
+	    //     int y2 = cy + (int)(70 * sinf(angle));
+	    //     ST7789_DrawLine(x1, y1, x2, y2, ST7789_WHITE);
+      //   }
       for (int i = 0; i < 12; i++) {
-          float angle = (i * 30 - 90) * 3.14159f / 180.0f;
-          int x1 = cx + (int)(60 * cosf(angle));
-          int y1 = cy + (int)(60 * sinf(angle));
-          int x2 = cx + (int)(70 * cosf(angle));
-          int y2 = cy + (int)(70 * sinf(angle));
-          ST7789_DrawLine(x1, y1, x2, y2, ST7789_WHITE);
+        float angle = (i * 30 - 90) * 3.14159f / 180.0f;
+        int x1 = cx + (int)(100 * cosf(angle));
+        int y1 = cy + (int)(100 * sinf(angle));
+        int x2 = cx + (int)(110 * cosf(angle));
+        int y2 = cy + (int)(110 * sinf(angle));
+        // ST7789_DrawLine(x1, y1, x2, y2, ST7789_WHITE);
+        
+        // Vẽ số giờ
+        int num_x = cx + (int)(100 * cosf(angle)) - 8; // -8 để căn giữa số
+        int num_y = cy + (int)(100 * sinf(angle)) - 9; // -9 để căn giữa số
+        char numStr[3];
+        sprintf(numStr, "%d", (i == 0) ? 12 : i);
+        // ST7789_print(num_x, num_y, ST7789_WHITE, RGB565(30,30,30), 1, &Font_11x18, 1, numStr);
+        ST7789_print(num_x, num_y, ST7789_WHITE, RGB565(30,30,30), 0, &Font_11x18, 2, numStr);
       }
+	    // Vẽ kim giờ
+	    float angle_h = ((hour % 12) + minute / 60.0f) * 30.0f - 90.0f;
+	    angle_h = angle_h * 3.14159f / 180.0f;
+	    int hx = cx + (int)(60 * cosf(angle_h));
+	    int hy = cy + (int)(60 * sinf(angle_h));
+      ST7789_DrawLineThick(cx, cy, hx, hy, RGB565(255, 0, 0), 6);
+      // ST7789_DrawLine(cx, cy, hx, hy, RGB565(255, 0, 0));
+	    // Vẽ kim phút
+	    float angle_m = (minute + second / 60.0f) * 6.0f - 90.0f;
+	    angle_m = angle_m * 3.14159f / 180.0f;
+	    int mx = cx + (int)(90 * cosf(angle_m));
+	    int my = cy + (int)(90 * sinf(angle_m));
+	    // ST7789_DrawLine(cx, cy, mx, my, RGB565(0, 255, 0));
+      ST7789_DrawLineThick(cx, cy, mx, my, RGB565(0, 255, 0), 4);
 
-      // Vẽ kim gi�?
-      float angle_h = ((hour % 12) + minute / 60.0f) * 30.0f - 90.0f;
-      angle_h = angle_h * 3.14159f / 180.0f;
-      int hx = cx + (int)(40 * cosf(angle_h));
-      int hy = cy + (int)(40 * sinf(angle_h));
-      ST7789_DrawLine(cx, cy, hx, hy, RGB565(255, 0, 0));
+	    // Vẽ kim giây
+	    float angle_s = second * 6.0f - 90.0f;
+	    angle_s = angle_s * 3.14159f / 180.0f;
+	    int sx = cx + (int)(110 * cosf(angle_s));
+	    int sy = cy + (int)(110 * sinf(angle_s));
+	    // ST7789_DrawLine(cx, cy, sx, sy, RGB565(0, 200, 255));
+      ST7789_DrawLineThick(cx, cy, sx, sy, RGB565(0, 200, 255), 2);
 
-      // Vẽ kim phút
-      float angle_m = (minute + second / 60.0f) * 6.0f - 90.0f;
-      angle_m = angle_m * 3.14159f / 180.0f;
-      int mx = cx + (int)(55 * cosf(angle_m));
-      int my = cy + (int)(55 * sinf(angle_m));
-      ST7789_DrawLine(cx, cy, mx, my, RGB565(0, 255, 0));
+	    // Vẽ tâm đồng hồ
+	    ST7789_DrawCircleFilled(cx, cy, 4, ST7789_WHITE);
 
-      // Vẽ kim giây
-      float angle_s = second * 6.0f - 90.0f;
-      angle_s = angle_s * 3.14159f / 180.0f;
-      int sx = cx + (int)(65 * cosf(angle_s));
-      int sy = cy + (int)(65 * sinf(angle_s));
-      ST7789_DrawLine(cx, cy, sx, sy, RGB565(0, 200, 255));
+	    // Xóa số cũ (vẽ đè bằng màu n�?n)
+	    // ST7789_DrawRectangleFilled(70, 210, 170, 230, RGB565(30,30,30));
+      // ST7789_DrawImage(70, 210, 100, 20, logoRGB + 210 * 240 + 70);
+	    // Hiển thị số gi�?/phút/giây dạng số ở dưới
+	    char timeStr[16];
+	    sprintf(timeStr, "%02d:%02d:%02d", hour, minute, second);
+	    // ST7789_print(70, 210, ST7789_CYAN, RGB565(30,30,30), 0, &Font_11x18, 1, timeStr);
+      // ST7789_print(70, 210, ST7789_CYAN, RGB565(30,30,30), 0, &Font_11x18, 1, timeStr);
+      
+      ST7789_Update();
 
-      // Vẽ tâm đồng hồ
-      ST7789_DrawCircleFilled(cx, cy, 4, ST7789_WHITE);
+	    // Tăng th�?i gian (giả lập, nếu không có RTC)
+//	    HAL_Delay(1);
+	    // second++;
+	    if (second >= 60) { second = 0; minute++; }
+	    if (minute >= 60) { minute = 0; hour++; }
+	    if (hour >= 24)   { hour = 0; }
+	}
 
-      // Xóa số cũ (vẽ đè bằng màu n�?n)
-      ST7789_DrawRectangleFilled(70, 210, 170, 230, RGB565(30,30,30));
-      // Hiển thị số gi�?/phút/giây dạng số ở dưới
-      char timeStr[16];
-      sprintf(timeStr, "%02d:%02d:%02d", hour, minute, second);
-      ST7789_print(70, 210, ST7789_CYAN, RGB565(30,30,30), 1, &Font_11x18, 1, timeStr);
+	// ST7789_DrawImage( 0, 0, 240, 240, logoRGB );
 
-      // Tăng th�?i gian (giả lập, nếu không có RTC)
-      HAL_Delay(1);
-      second++;
-      if (second >= 60) { second = 0; minute++; }
-      if (minute >= 60) { minute = 0; hour++; }
-      if (hour >= 24)   { hour = 0; }
-  }
-
-  ST7789_DrawImage( 0, 0, 240, 240, logoRGB );
-
-  // ST7789_print( 20, 220, RGB565(180, 0, 0) , RGB565(0, 10, 120) , 1, &Font_11x18, 1, "Oanh Love Giang" );
+	// ST7789_print( 20, 220, RGB565(180, 0, 0) , RGB565(0, 10, 120) , 1, &Font_11x18, 1, "Oanh Love Giang" );
 //				// // очи�?тка только буфера кадра  ( при етом �?ам �?кран не очищаеть�?�? )
 //				// //	#if FRAME_BUFFER	// е�?ли включен буфер кадра
 //				// //			ST7789_ClearFrameBuffer();
