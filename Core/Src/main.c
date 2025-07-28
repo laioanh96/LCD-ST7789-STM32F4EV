@@ -12,7 +12,12 @@
   * This software component is licensed by ST under BSD 3-Clause license,
   * the "License"; You may not use this file except in compliance with the
   * License. You may obtain a copy of the License at:
-  *                        opensource.org/licenses/BSD-3-Clause
+  *      // Re-enable joystick debug label for testing
+  // Add joystick debug label
+  lv_obj_t * joy_debug_label = lv_label_create(lv_scr_act());
+  lv_label_set_text(joy_debug_label, "Joystick: BTN=1");
+  lv_obj_align(joy_debug_label, LV_ALIGN_TOP_LEFT, 5, 30);
+  lv_obj_set_style_text_color(joy_debug_label, lv_color_hex(0xFFFF00), LV_PART_MAIN);            opensource.org/licenses/BSD-3-Clause
   *
   ******************************************************************************
   */
@@ -27,6 +32,7 @@
 
 #include "bitmap.h"
 #include "fonts.h"
+#include "input.h"  // Add joystick input support
 
 #include "lvgl.h"
 #include "stdio.h"
@@ -51,6 +57,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+
 RTC_HandleTypeDef hrtc;
 
 SPI_HandleTypeDef hspi2;
@@ -66,10 +74,11 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_RTC_Init(void);
+static void MX_ADC1_Init(void);
 void StartBlinkTask(void const * argument);
-void StartLVGLTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
+void StartLVGLTask(void const * argument);
 
 /* USER CODE END PFP */
 
@@ -118,30 +127,62 @@ uint32_t button_read(void)
     return 0xFF; // No button pressed
 }
 
-// LVGL input device read callback
+// LVGL input device read callback - with improved debouncing
 void keypad_read(lv_indev_drv_t * indev_drv, lv_indev_data_t * data)
 {
+    static uint32_t last_read_time = 0;
     static uint32_t last_btn = 0xFF;
-    uint32_t btn_pressed = button_read();
+    static uint32_t stable_btn = 0xFF;
+    static uint32_t stable_time = 0;
     
-    if(btn_pressed != 0xFF) {
-        // Button is pressed
-        data->state = LV_INDEV_STATE_PR;
-        last_btn = btn_pressed;
+    uint32_t current_time = HAL_GetTick();
+    
+    // Read buttons every 10ms for responsiveness
+    if (current_time - last_read_time > 10) {
+        last_read_time = current_time;
+        uint32_t btn_pressed = button_read();
         
-        // Convert to LVGL keys
-        switch(btn_pressed) {
-            case BTN_UP:    data->key = LV_KEY_UP;    break;
-            case BTN_DOWN:  data->key = LV_KEY_DOWN;  break;
-            case BTN_LEFT:  data->key = LV_KEY_LEFT;  break;
-            case BTN_RIGHT: data->key = LV_KEY_RIGHT; break;
-            case BTN_ENTER: data->key = LV_KEY_ENTER; break;
-            default:        data->key = 0;           break;
+        // Debouncing logic
+        if (btn_pressed != last_btn) {
+            stable_time = current_time;  // Reset stability timer
+            last_btn = btn_pressed;
+        } else if (current_time - stable_time > 20) {  // 20ms stable
+            stable_btn = btn_pressed;  // Update stable state
+        }
+        
+        if(stable_btn != 0xFF) {
+            // Button is pressed and stable
+            data->state = LV_INDEV_STATE_PR;
+            
+            // Convert to LVGL keys
+            switch(stable_btn) {
+                case BTN_UP:    data->key = LV_KEY_UP;    break;
+                case BTN_DOWN:  data->key = LV_KEY_DOWN;  break;
+                case BTN_LEFT:  data->key = LV_KEY_LEFT;  break;
+                case BTN_RIGHT: data->key = LV_KEY_RIGHT; break;
+                case BTN_ENTER: data->key = LV_KEY_ENTER; break;
+                default:        data->key = 0;           break;
+            }
+        } else {
+            // No button pressed
+            data->state = LV_INDEV_STATE_REL;
+            data->key = 0;
         }
     } else {
-        // No button pressed
-        data->state = LV_INDEV_STATE_REL;
-        data->key = 0;
+        // Use previous state if not time to read yet
+        data->state = (stable_btn != 0xFF) ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
+        if (stable_btn != 0xFF) {
+            switch(stable_btn) {
+                case BTN_UP:    data->key = LV_KEY_UP;    break;
+                case BTN_DOWN:  data->key = LV_KEY_DOWN;  break;
+                case BTN_LEFT:  data->key = LV_KEY_LEFT;  break;
+                case BTN_RIGHT: data->key = LV_KEY_RIGHT; break;
+                case BTN_ENTER: data->key = LV_KEY_ENTER; break;
+                default:        data->key = 0;           break;
+            }
+        } else {
+            data->key = 0;
+        }
     }
 }
 
@@ -177,6 +218,7 @@ int main(void)
   MX_GPIO_Init();
   MX_SPI2_Init();
   MX_RTC_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
 	// ST7789 display initialization procedure
 	ST7789_Init();
@@ -231,14 +273,14 @@ int main(void)
 
   /* Create the thread(s) */
   /* definition and creation of blinkLEDTask */
-  osThreadDef(blinkLEDTask, StartBlinkTask, osPriorityNormal, 0, 64);  // Giảm từ 128->64
+  osThreadDef(blinkLEDTask, StartBlinkTask, osPriorityNormal, 0, 128);
   blinkLEDTaskHandle = osThreadCreate(osThread(blinkLEDTask), NULL);
 
-  /* definition and creation of lvglTask */
-  osThreadDef(lvglTask, StartLVGLTask, osPriorityNormal, 0, 512);  // Tăng từ 256->512
-  lvglTaskHandle = osThreadCreate(osThread(lvglTask), NULL);
-
+  
   /* USER CODE BEGIN RTOS_THREADS */
+  /* definition and creation of lvglTask */
+  osThreadDef(lvglTask, StartLVGLTask, osPriorityNormal, 0, 1024);  // Tăng từ 512->1024 để tránh stack overflow
+  lvglTaskHandle = osThreadCreate(osThread(lvglTask), NULL);
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
 
@@ -307,6 +349,66 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.ScanConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_0;
+  sConfig.Rank = 1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  
+  /** Configure ADC Channel 1 for VRY (PA1)
+  */
+  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Rank = 1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
@@ -402,6 +504,18 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_11, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin : PC0 (Joystick SW button - active LOW) */
+  GPIO_InitStruct.Pin = GPIO_PIN_0;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;  // Pull-up for active LOW button
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PA0 PA1 (ADC Analog inputs for Joystick VRX, VRY) */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1;
+  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
   /*Configure GPIO pins : PA6 PA7 */
   GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -415,14 +529,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /* Configure Button pins as inputs */
-  /*UP button: PC0, DOWN button: PC1, LEFT: PC2, RIGHT: PC3, ENTER: PC4*/
-  __HAL_RCC_GPIOC_CLK_ENABLE();  // Thêm clock enable cho GPIOC
-  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_4;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;  // Pull-up, button press = LOW
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
 }
 
@@ -485,16 +591,29 @@ void StartLVGLTask(void const * argument)
   );
   lv_disp_set_theme(lv_disp_get_default(), theme);
 
-  // Setup input device (keypad/buttons)  
+  // Setup input device (joystick - dual mode support)
   static lv_indev_drv_t indev_drv;
   lv_indev_drv_init(&indev_drv);       // Khởi tạo input driver
-  indev_drv.type = LV_INDEV_TYPE_KEYPAD; // Loại input: keypad
-  indev_drv.read_cb = keypad_read;     // Callback đọc button
+  indev_drv.type = LV_INDEV_TYPE_KEYPAD; // Start in keypad mode (can switch to mouse)
+  indev_drv.read_cb = joystick_read;   // Use full joystick_read with dual mode support
   lv_indev_t * indev = lv_indev_drv_register(&indev_drv);
 
   // Tạo group cho input navigation
   lv_group_t * g = lv_group_create();  // Tạo group để navigate
   lv_indev_set_group(indev, g);        // Gán group cho input device
+
+  // Create cursor for mouse mode - ALWAYS VISIBLE for debugging
+  lv_obj_t * cursor_obj = lv_obj_create(lv_scr_act());
+  lv_obj_set_size(cursor_obj, 20, 20);  // Larger cursor for visibility
+  lv_obj_set_style_bg_color(cursor_obj, lv_color_hex(0xFF0000), LV_PART_MAIN); // Red cursor
+  lv_obj_set_style_bg_opa(cursor_obj, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_border_width(cursor_obj, 2, LV_PART_MAIN);
+  lv_obj_set_style_border_color(cursor_obj, lv_color_hex(0xFFFFFF), LV_PART_MAIN); // White border
+  lv_obj_set_style_radius(cursor_obj, 10, LV_PART_MAIN); // Round cursor
+  // DEBUG: Make cursor always visible
+  // lv_obj_add_flag(cursor_obj, LV_OBJ_FLAG_HIDDEN); // Hide initially (keypad mode)
+  lv_obj_set_pos(cursor_obj, 120, 120); // Center cursor for visibility
+  lv_indev_set_cursor(indev, cursor_obj); // Set as cursor for input device
 
   
   // Test button với màu explicit trước
@@ -512,15 +631,179 @@ void StartLVGLTask(void const * argument)
   // Thêm vào group để có thể focus
   lv_group_add_obj(g, btn);
 
-  // Chạy example button
-  lv_example_btn_1();
+  // Add mode switch button
+  lv_obj_t * switch_btn = lv_btn_create(lv_scr_act());
+  lv_obj_set_size(switch_btn, 100, 40);
+  lv_obj_align(switch_btn, LV_ALIGN_BOTTOM_MID, 0, -10);
+  lv_obj_set_style_bg_color(switch_btn, lv_color_hex(0x00FF00), LV_PART_MAIN); // Green
+  lv_obj_set_style_bg_opa(switch_btn, LV_OPA_COVER, LV_PART_MAIN);
+  
+  lv_obj_t * switch_label = lv_label_create(switch_btn);
+  lv_label_set_text(switch_label, "Switch Mode");
+  lv_obj_center(switch_label);
+  lv_group_add_obj(g, switch_btn);
+
+  // Add mode display label
+  lv_obj_t * mode_label = lv_label_create(lv_scr_act());
+  lv_label_set_text(mode_label, "Mode: KEYPAD");
+  lv_obj_align(mode_label, LV_ALIGN_TOP_MID, 0, 10);
+  lv_obj_set_style_text_color(mode_label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+
+  // Re-enable debug label for testing
+  // Add joystick debug label
+  lv_obj_t * joy_debug_label = lv_label_create(lv_scr_act());
+  lv_label_set_text(joy_debug_label, "Joystick: BTN=1");
+  lv_obj_align(joy_debug_label, LV_ALIGN_TOP_LEFT, 5, 30);
+  lv_obj_set_style_text_color(joy_debug_label, lv_color_hex(0xFFFF00), LV_PART_MAIN);
+
+  // TEMPORARILY DISABLE LVGL EXAMPLE TO SAVE MEMORY
+  // lv_example_btn_1();
+  
+  // Variables for mode switching
+  static uint32_t last_mode_switch = 0;
+  static lv_indev_drv_t* current_indev_drv = NULL;
+  static lv_obj_t* current_cursor = NULL;
+  static lv_obj_t* current_mode_label = NULL;
+  static lv_obj_t* joy_debug_label_ptr = NULL;  // Re-enable for testing
+  
+  // Initialize pointers after objects are created
+  current_indev_drv = &indev_drv;
+  current_cursor = cursor_obj;
+  current_mode_label = mode_label;
+  joy_debug_label_ptr = joy_debug_label;  // Assign debug label
   
   /* Infinite loop */
   for(;;)
   {
+    // ENABLE MODE SWITCHING - Now that ADC is working properly
+    // Check for mode switching (long press detection) - Use same button reading as debug
+    static uint32_t btn_press_start = 0;
+    static uint8_t last_btn_for_mode = 1;  // Released
+    
+    uint8_t current_btn_for_mode = joystick_test_button();  // Use same function as debug
+    
+    if (current_btn_for_mode == 0) {  // Button pressed
+        if (last_btn_for_mode == 1) {  // Just pressed
+            btn_press_start = HAL_GetTick();
+        } else if (HAL_GetTick() - btn_press_start > 2000) {  // Held for 2 seconds
+            // Switch input mode
+            joystick_toggle_input_mode();
+            
+            // Update input device type and cursor visibility
+            if (joystick_get_input_mode() == INPUT_MODE_MOUSE) {
+                current_indev_drv->type = LV_INDEV_TYPE_POINTER;
+                // DEBUG: Cursor is always visible now
+                // lv_obj_clear_flag(current_cursor, LV_OBJ_FLAG_HIDDEN); // Show cursor
+                lv_label_set_text(current_mode_label, "Mode: MOUSE");
+            } else {
+                current_indev_drv->type = LV_INDEV_TYPE_KEYPAD;
+                // DEBUG: Don't hide cursor for testing
+                // lv_obj_add_flag(current_cursor, LV_OBJ_FLAG_HIDDEN); // Hide cursor
+                lv_label_set_text(current_mode_label, "Mode: KEYPAD");
+            }
+            
+            btn_press_start = HAL_GetTick();  // Reset to avoid immediate re-trigger
+        }
+    }
+    last_btn_for_mode = current_btn_for_mode;
+    
+    // Keep ADC test for debugging - SMOOTH UPDATE for cursor movement
+    // Test joystick button + ADC VRX + VRY - optimized for smooth cursor
+    static uint32_t last_joystick_update = 0;
+    if (HAL_GetTick() - last_joystick_update > 16) {  // Update every 16ms = 60 FPS for smooth cursor
+        last_joystick_update = HAL_GetTick();
+        
+        // Test button with debouncing (keep existing code)
+        static uint8_t btn_last_state = 1;  // Released state
+        static uint32_t btn_stable_time = 0;
+        static uint8_t btn_debounced_state = 1;
+        
+        uint8_t btn_current = joystick_test_button();
+        
+        // Check if button state changed
+        if (btn_current != btn_last_state) {
+            btn_stable_time = HAL_GetTick();  // Reset stability timer
+            btn_last_state = btn_current;
+        } else if (HAL_GetTick() - btn_stable_time > 20) {  // 20ms stable time
+            // State has been stable for 20ms, update debounced state
+            if (btn_debounced_state != btn_current) {
+                btn_debounced_state = btn_current;
+            }
+        }
+        
+        // Enable ADC test after 3 seconds to ensure system stability
+        static uint8_t adc_test_enabled = 0;
+        static uint32_t system_start_time = 0;
+        if (system_start_time == 0) {
+            system_start_time = HAL_GetTick();
+        }
+        
+        if (!adc_test_enabled && (HAL_GetTick() - system_start_time > 3000)) {
+            adc_test_enabled = 1;  // Enable ADC after 3 seconds
+        }
+        
+        // Test ADC VRX + VRY channels if enabled
+        uint16_t x_val = 2048;  // Default center value
+        uint16_t y_val = 2048;  // Default center value
+        if (adc_test_enabled) {
+            x_val = joystick_test_adc_channel(0);  // Test VRX (PA0)
+            y_val = joystick_test_adc_channel(1);  // Test VRY (PA1)
+        }
+        
+        // Update debug label with button + both ADC channels + mode info + timer
+        static char debug_text[80];
+        if (adc_test_enabled) {
+            const char* mode_str = (joystick_get_input_mode() == INPUT_MODE_MOUSE) ? "MOUSE" : "KEYPAD";
+            uint32_t hold_time = 0;
+            if (current_btn_for_mode == 0 && last_btn_for_mode == 0) {  // Being held
+                hold_time = HAL_GetTick() - btn_press_start;
+            }
+            snprintf(debug_text, sizeof(debug_text), "BTN:%s X:%d Y:%d [%s] T:%dms", 
+                    btn_debounced_state ? "R" : "P", x_val, y_val, mode_str, hold_time);
+                    
+            // DEBUG: Force cursor movement in mouse mode for testing - SMOOTH VERSION
+            if (joystick_get_input_mode() == INPUT_MODE_MOUSE) {
+                // Map ADC values (0-4095) to screen coordinates (0-240) with deadzone
+                int16_t cursor_x = (x_val * 240) / 4095;
+                int16_t cursor_y = (y_val * 240) / 4095;
+                
+                // Add deadzone around center to reduce jitter
+                int16_t center_x = 120;
+                int16_t center_y = 120;
+                int16_t deadzone = 3;  // 3 pixel deadzone
+                
+                static int16_t last_cursor_x = 120;
+                static int16_t last_cursor_y = 120;
+                
+                // Apply deadzone - only move if outside deadzone
+                if (abs(cursor_x - center_x) > deadzone || abs(cursor_y - center_y) > deadzone) {
+                    // Limit to screen bounds
+                    if (cursor_x < 0) cursor_x = 0;
+                    if (cursor_x > 239) cursor_x = 239;
+                    if (cursor_y < 0) cursor_y = 0;
+                    if (cursor_y > 239) cursor_y = 239;
+                    
+                    // Smooth movement - interpolate between last and current position
+                    int16_t smooth_x = (last_cursor_x * 3 + cursor_x) / 4;  // 75% old + 25% new
+                    int16_t smooth_y = (last_cursor_y * 3 + cursor_y) / 4;
+                    
+                    // Force update cursor position with smoothing
+                    lv_obj_set_pos(current_cursor, smooth_x, smooth_y);
+                    
+                    last_cursor_x = smooth_x;
+                    last_cursor_y = smooth_y;
+                }
+            }
+        } else {
+            snprintf(debug_text, sizeof(debug_text), "BTN:%s ADC:Wait [KEYPAD]", 
+                    btn_debounced_state ? "Released" : "PRESSED");
+        }
+        lv_label_set_text(joy_debug_label_ptr, debug_text);
+    }
+    
     // Chạy LVGL timer handler
     lv_timer_handler();
-    osDelay(10);  // LVGL cần chạy thường xuyên
+    osDelay(10);  // Giảm delay từ 20ms→10ms để tăng responsiveness
   }
   /* USER CODE END StartLVGLTask */
 }
