@@ -245,8 +245,12 @@ __inline static void ST7789_SendCmd(uint8_t Cmd){
 
 		 // pin DC LOW
 		 HAL_GPIO_WritePin(DC_GPIO_Port, DC_Pin, GPIO_PIN_RESET);
-
-		 HAL_SPI_Transmit(&ST7789_SPI_HAL, &Cmd, 1, HAL_MAX_DELAY);
+		#ifdef HAL_DMA_MODULE_ENABLED
+			// Используем DMA для передачи данных
+			HAL_SPI_Transmit_DMA(&ST7789_SPI_HAL, &Cmd, 1);
+		#else
+			HAL_SPI_Transmit(&ST7789_SPI_HAL, &Cmd, 1, HAL_MAX_DELAY);
+		#endif
 		 while(HAL_SPI_GetState(&ST7789_SPI_HAL) != HAL_SPI_STATE_READY){};
 
 		 // pin DC HIGH
@@ -333,8 +337,12 @@ __inline static void ST7789_SendData(uint8_t Data ){
 
 	//-- если захотим переделать под HAL ------------------
 	#ifdef ST7789_SPI_HAL
-
-		HAL_SPI_Transmit(&ST7789_SPI_HAL, &Data, 1, HAL_MAX_DELAY);
+		#ifdef HAL_DMA_MODULE_ENABLED
+			// Используем DMA для передачи данных
+			HAL_SPI_Transmit_DMA(&ST7789_SPI_HAL, &Data, 1);
+		#else
+			HAL_SPI_Transmit(&ST7789_SPI_HAL, &Data, 1, HAL_MAX_DELAY);
+		#endif
 		while(HAL_SPI_GetState(&ST7789_SPI_HAL) != HAL_SPI_STATE_READY){};
 
 	#endif
@@ -414,15 +422,30 @@ __inline static void ST7789_SendDataMASS(uint8_t* buff, size_t buff_size){
 	#ifdef ST7789_SPI_HAL
 
 		if( buff_size <= 0xFFFF ){
+		#ifdef HAL_DMA_MODULE_ENABLED
+			// Используем DMA для передачи данных
+			HAL_SPI_Transmit_DMA(&ST7789_SPI_HAL, buff, buff_size);
+		#else
 			HAL_SPI_Transmit(&ST7789_SPI_HAL, buff, buff_size, HAL_MAX_DELAY);
+		#endif
 		}
 		else{
 			while( buff_size > 0xFFFF ){
+			#ifdef HAL_DMA_MODULE_ENABLED
+				// Используем DMA для передачи данных
+				HAL_SPI_Transmit_DMA(&ST7789_SPI_HAL, buff, 0xFFFF);
+			#else
 				HAL_SPI_Transmit(&ST7789_SPI_HAL, buff, 0xFFFF, HAL_MAX_DELAY);
+			#endif
 				buff_size-=0xFFFF;
 				buff+=0xFFFF;
 			}
-			HAL_SPI_Transmit(&ST7789_SPI_HAL, buff, buff_size, HAL_MAX_DELAY);
+			#ifdef HAL_DMA_MODULE_ENABLED
+				// Используем DMA для передачи данных
+				HAL_SPI_Transmit_DMA(&ST7789_SPI_HAL, buff, buff_size);
+			#else
+				HAL_SPI_Transmit(&ST7789_SPI_HAL, buff, buff_size, HAL_MAX_DELAY);
+			#endif
 		}
 
 		while(HAL_SPI_GetState(&ST7789_SPI_HAL) != HAL_SPI_STATE_READY){};

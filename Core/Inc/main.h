@@ -54,7 +54,7 @@ extern "C" {
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
-
+extern DMA_HandleTypeDef hdma_spi2_tx;
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/

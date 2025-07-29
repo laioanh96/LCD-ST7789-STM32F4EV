@@ -54,6 +54,7 @@
 RTC_HandleTypeDef hrtc;
 
 SPI_HandleTypeDef hspi2;
+DMA_HandleTypeDef hdma_spi2_tx;  // DMA cho SPI2 TX
 
 osThreadId blinkLEDTaskHandle;
 osThreadId lvglTaskHandle;
@@ -64,6 +65,7 @@ osThreadId lvglTaskHandle;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);  // DMA initialization
 static void MX_SPI2_Init(void);
 static void MX_RTC_Init(void);
 void StartBlinkTask(void const * argument);
@@ -76,21 +78,51 @@ void StartLVGLTask(void const * argument);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-// LVGL display buffer và flush callback - minimal version
+// LVGL display buffer - DOUBLE BUFFERING implementation
 static lv_disp_draw_buf_t draw_buf;
-static lv_color_t buf[240 * 1];  // Buffer cho chỉ 1 dòng pixel để tiết kiệm RAM
+static lv_color_t buf1[240 * 60];  // Buffer 1 = 28.8KB RAM 
+static lv_color_t buf2[240 * 60];  // Buffer 2 = 28.8KB RAM (Total: 57.6KB)
 
-// LVGL flush callback function - FIXED for direct drawing
+// Counter để đếm số lần flush được gọi
+static uint32_t flush_count = 0;
+static uint8_t current_buffer = 1;  // Track buffer hiện tại (1 hoặc 2)
+
+// DMA transfer completed flag
+static volatile uint8_t dma_transfer_complete = 1;
+
+// LVGL flush callback function - WITH DMA SUPPORT
 void my_disp_flush(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_color_t * color_p)
 {
-    int32_t x, y;
-    for (y = area->y1; y <= area->y2; y++) {
-        for (x = area->x1; x <= area->x2; x++) {
-            ST7789_DrawPixel(x, y, color_p->full);
-            color_p++;
-        }
+    // Tính toán kích thước area
+    int32_t width = area->x2 - area->x1 + 1;
+    int32_t height = area->y2 - area->y1 + 1;
+    
+    // Cast LVGL color buffer về uint16_t cho ST7789
+    uint16_t * pixel_data = (uint16_t *)color_p;
+    
+    // Debug: Đếm số lần flush + track buffer
+    flush_count++;
+    
+    // Xác định buffer nào đang được sử dụng
+    if(color_p == (lv_color_t*)buf1) {
+        current_buffer = 1;
+    } else if(color_p == (lv_color_t*)buf2) {
+        current_buffer = 2;
     }
-    // Không cần ST7789_Update() vì vẽ trực tiếp
+    
+    // Wait for previous DMA transfer to complete
+    while(!dma_transfer_complete) {
+        osDelay(1);
+    }
+    
+    // Start DMA transfer - NON-BLOCKING
+    dma_transfer_complete = 0;
+    ST7789_DrawImage(area->x1, area->y1, width, height, pixel_data);
+    
+    // For now, use blocking mode until DMA callback is implemented
+    dma_transfer_complete = 1;
+    
+    // Báo cho LVGL biết đã flush xong - LVGL sẽ tự switch buffer
     lv_disp_flush_ready(disp_drv);
 }
 
@@ -175,6 +207,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();  // DMA phải init TRƯỚC SPI
   MX_SPI2_Init();
   MX_RTC_Init();
   /* USER CODE BEGIN 2 */
@@ -182,35 +215,6 @@ int main(void)
 	ST7789_Init();
 	// Setting the display rotation
 	ST7789_rotation( 1 );
-
-	// // Simple test để kiểm tra màn hình hoạt động
-	// ST7789_FillScreen(ST7789_RED);
-	// HAL_Delay(500);
-	// ST7789_FillScreen(ST7789_GREEN);
-	// HAL_Delay(500);
-	// ST7789_FillScreen(ST7789_BLUE);
-	// HAL_Delay(500);
-	// ST7789_FillScreen(ST7789_BLACK);
-	
-	// // Vẽ text test
-	// ST7789_print(10, 10, ST7789_WHITE, ST7789_BLACK, 0, &Font_11x18, 1, "ST7789 Ready!");
-
-	/*
-	// LVGL initialization - MOVED TO TASK TO AVOID DUPLICATE
-	lv_init();
-	
-	// Display buffer initialization  
-	lv_disp_draw_buf_init(&draw_buf, buf, NULL, 240 * 1);
-	
-	// Display driver initialization
-	static lv_disp_drv_t disp_drv;
-	lv_disp_drv_init(&disp_drv);
-	disp_drv.hor_res = 240;
-	disp_drv.ver_res = 240;
-	disp_drv.flush_cb = my_disp_flush;
-	disp_drv.draw_buf = &draw_buf;
-	lv_disp_drv_register(&disp_drv);
-	*/
   /* USER CODE END 2 */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -231,11 +235,11 @@ int main(void)
 
   /* Create the thread(s) */
   /* definition and creation of blinkLEDTask */
-  osThreadDef(blinkLEDTask, StartBlinkTask, osPriorityNormal, 0, 64);  // Giảm từ 128->64
+  osThreadDef(blinkLEDTask, StartBlinkTask, osPriorityNormal, 0, 128);
   blinkLEDTaskHandle = osThreadCreate(osThread(blinkLEDTask), NULL);
 
   /* definition and creation of lvglTask */
-  osThreadDef(lvglTask, StartLVGLTask, osPriorityNormal, 0, 512);  // Tăng từ 256->512
+  osThreadDef(lvglTask, StartLVGLTask, osPriorityNormal, 0, 1024);
   lvglTaskHandle = osThreadCreate(osThread(lvglTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
@@ -375,10 +379,43 @@ static void MX_SPI2_Init(void)
   {
     Error_Handler();
   }
+  
+  /* Configure DMA for SPI2 TX */
+  hdma_spi2_tx.Instance = DMA1_Stream4;
+  hdma_spi2_tx.Init.Channel = DMA_CHANNEL_0;
+  hdma_spi2_tx.Init.Direction = DMA_MEMORY_TO_PERIPH;
+  hdma_spi2_tx.Init.PeriphInc = DMA_PINC_DISABLE;
+  hdma_spi2_tx.Init.MemInc = DMA_MINC_ENABLE;
+  hdma_spi2_tx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
+  hdma_spi2_tx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
+  hdma_spi2_tx.Init.Mode = DMA_NORMAL;
+  hdma_spi2_tx.Init.Priority = DMA_PRIORITY_HIGH;
+  hdma_spi2_tx.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+  if (HAL_DMA_Init(&hdma_spi2_tx) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  
+  /* Link DMA to SPI - Compatible way */
+  hspi2.hdmatx = &hdma_spi2_tx;
   /* USER CODE BEGIN SPI2_Init 2 */
 
   /* USER CODE END SPI2_Init 2 */
 
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream4_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
 }
 
 /**
@@ -397,13 +434,13 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6|GPIO_PIN_7, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_15, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_11, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PA6 PA7 */
-  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7;
+  /*Configure GPIO pins : PA6 PA7 PA15 */
+  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_15;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -418,7 +455,6 @@ static void MX_GPIO_Init(void)
 
   /* Configure Button pins as inputs */
   /*UP button: PC0, DOWN button: PC1, LEFT: PC2, RIGHT: PC3, ENTER: PC4*/
-  __HAL_RCC_GPIOC_CLK_ENABLE();  // Thêm clock enable cho GPIOC
   GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_4;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;  // Pull-up, button press = LOW
@@ -443,7 +479,7 @@ void StartBlinkTask(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-    // HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_7);
+    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_15); // Enable LED debug
     osDelay(500);
   }
   /* USER CODE END 5 */
@@ -460,20 +496,25 @@ void StartLVGLTask(void const * argument)
 {
   /* USER CODE BEGIN StartLVGLTask */
   
+  // Declare objects để dùng trong loop
+  lv_obj_t * screen_test;
+  lv_obj_t * color_label;
+  
   // Bước 1: Init LVGL
   lv_init();
 
-  // Bước 2: Init display driver  
-  lv_disp_draw_buf_init(&draw_buf, buf, NULL, 240 * 1);
+  // Bước 2: Init display driver với DOUBLE BUFFERING
+  // buf1 = working buffer, buf2 = back buffer
+  lv_disp_draw_buf_init(&draw_buf, buf1, buf2, 240 * 60);
 
   // Bước 3: Init display driver
   static lv_disp_drv_t disp_drv;
   lv_disp_drv_init(&disp_drv);         // Khởi tạo với default values
-  disp_drv.hor_res = 240;              // Độ phân giải ngang
-  disp_drv.ver_res = 240;              // Độ phân giải dọc
+  disp_drv.hor_res = 240;              // �?ộ phân giải ngang
+  disp_drv.ver_res = 240;              // �?ộ phân giải d�?c
   disp_drv.flush_cb = my_disp_flush;   // Callback để vẽ lên LCD
   disp_drv.draw_buf = &draw_buf;       // Gán buffer đã tạo
-  lv_disp_drv_register(&disp_drv);     // Đăng ký driver với LVGL
+  lv_disp_drv_register(&disp_drv);     // �?ăng ký driver với LVGL
 
   // Initialize default theme
   lv_theme_t * theme = lv_theme_default_init(
@@ -489,13 +530,26 @@ void StartLVGLTask(void const * argument)
   static lv_indev_drv_t indev_drv;
   lv_indev_drv_init(&indev_drv);       // Khởi tạo input driver
   indev_drv.type = LV_INDEV_TYPE_KEYPAD; // Loại input: keypad
-  indev_drv.read_cb = keypad_read;     // Callback đọc button
+  indev_drv.read_cb = keypad_read;     // Callback đ�?c button
   lv_indev_t * indev = lv_indev_drv_register(&indev_drv);
 
   // Tạo group cho input navigation
   lv_group_t * g = lv_group_create();  // Tạo group để navigate
   lv_indev_set_group(indev, g);        // Gán group cho input device
 
+  // Test màn hình chuyển màu: Xanh → �?�? → �?en
+  screen_test = lv_obj_create(lv_scr_act());
+  lv_obj_set_size(screen_test, 240, 240);  // Full screen
+  lv_obj_align(screen_test, LV_ALIGN_CENTER, 0, 0);
+  lv_obj_set_style_bg_color(screen_test, lv_color_hex(0x00ff00), LV_PART_MAIN); // Bắt đầu với màu xanh lá
+  lv_obj_set_style_bg_opa(screen_test, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_border_width(screen_test, 0, LV_PART_MAIN); // Không vi�?n
+
+  // Label hiển thị màu hiện tại
+  color_label = lv_label_create(screen_test);
+  lv_label_set_text(color_label, "GREEN");
+  lv_obj_set_style_text_color(color_label, lv_color_hex(0xffffff), LV_PART_MAIN); // Chữ trắng
+  lv_obj_align(color_label, LV_ALIGN_CENTER, 0, 0);
   
   // Test button với màu explicit trước
   lv_obj_t * btn = lv_btn_create(lv_scr_act());
@@ -512,15 +566,72 @@ void StartLVGLTask(void const * argument)
   // Thêm vào group để có thể focus
   lv_group_add_obj(g, btn);
 
-  // Chạy example button
-  lv_example_btn_1();
+  // Test đơn giản - arc với manual animation
+  lv_obj_t * arc = lv_arc_create(lv_scr_act());
+  lv_obj_set_size(arc, 100, 100);
+  lv_obj_center(arc);
+  lv_arc_set_bg_angles(arc, 0, 360);  // Background full circle
+  lv_arc_set_angles(arc, 0, 60);      // Foreground arc
+  
+  // Thêm màu sắc cho arc
+  lv_obj_set_style_arc_color(arc, lv_color_hex(0x00ff00), LV_PART_INDICATOR); // Xanh lá
+  lv_obj_set_style_arc_width(arc, 8, LV_PART_INDICATOR);
+  
+  // Animation counter
+  static int16_t arc_angle = 0;
+  
+  // Color test variables
+  static uint32_t color_change_counter = 0;
+  static uint8_t current_color = 0; // 0=Green, 1=Red, 2=Black
   
   /* Infinite loop */
   for(;;)
   {
+    // Manual animation cho arc - tạo hiệu ứng spinner
+    arc_angle += 3;  // Tăng 3 độ mỗi lần
+    if(arc_angle >= 360) arc_angle = 0;
+    lv_arc_set_angles(arc, arc_angle, arc_angle + 60);
+    
+    // Test chuyển màu màn hình mỗi 2 giây (200 loops * 10ms)
+    color_change_counter++;
+    if(color_change_counter >= 200) {
+      color_change_counter = 0;
+      current_color++;
+      if(current_color > 2) current_color = 0;
+      
+      // Reset flush counter trước khi đổi màu
+      flush_count = 0;
+      
+      switch(current_color) {
+        case 0: // Green
+          lv_obj_set_style_bg_color(screen_test, lv_color_hex(0x00ff00), LV_PART_MAIN);
+          lv_label_set_text(color_label, "GREEN");
+          break;
+        case 1: // Red  
+          lv_obj_set_style_bg_color(screen_test, lv_color_hex(0xff0000), LV_PART_MAIN);
+          lv_label_set_text(color_label, "RED");
+          break;
+        case 2: // Black
+          lv_obj_set_style_bg_color(screen_test, lv_color_hex(0x000000), LV_PART_MAIN);
+          lv_label_set_text(color_label, "BLACK");
+          break;
+      }
+      
+      // Force LVGL update ngay lập tức
+      lv_obj_invalidate(screen_test);
+      
+      // �?ợi một chút để flush hoàn thành rồi update label với double buffer info
+      osDelay(50);
+      char debug_text[60];
+      sprintf(debug_text, "%s (Flush:%lu Buf:%d)", 
+              (current_color == 0) ? "GREEN" : (current_color == 1) ? "RED" : "BLACK",
+              flush_count, current_buffer);
+      lv_label_set_text(color_label, debug_text);
+    }
+    
     // Chạy LVGL timer handler
     lv_timer_handler();
-    osDelay(10);  // LVGL cần chạy thường xuyên
+    osDelay(10);  // 50ms cho animation mượt
   }
   /* USER CODE END StartLVGLTask */
 }

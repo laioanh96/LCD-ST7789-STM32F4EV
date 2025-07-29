@@ -99,7 +99,7 @@
 
 /*Enable complex draw engine.
  *Required to draw shadow, gradient, rounded corners, circles, arc, skew, image transformations or any masks*/
-#define LV_DRAW_COMPLEX 0
+#define LV_DRAW_COMPLEX 1  // Enable cho spinner và arc drawing
 #if LV_DRAW_COMPLEX != 0
 
     /*Allow buffering some shadow calculation.
@@ -408,9 +408,9 @@
 
 /*Documentation of the widgets: https://docs.lvgl.io/latest/en/html/widgets/index.html*/
 
-#define LV_USE_ARC        0
+#define LV_USE_ARC        1  // Enable ARC cho spinner
 #define LV_USE_ANIMIMG    0
-#define LV_USE_BAR        0
+#define LV_USE_BAR        0  // Disable BAR để giảm tải
 #define LV_USE_BTN        1
 #define LV_USE_BTNMATRIX  0
 #define LV_USE_CANVAS     0
@@ -472,7 +472,7 @@
 #define LV_USE_METER      0
 #define LV_USE_MSGBOX     0
 #define LV_USE_SPINBOX    0
-#define LV_USE_SPINNER    0
+#define LV_USE_SPINNER    1  // Enable spinner cho example
 #define LV_USE_TABVIEW    0
 #define LV_USE_TILEVIEW   0
 #define LV_USE_WIN        0
@@ -642,7 +642,7 @@
 *==================*/
 
 /*Enable the examples to be built with the library*/
-#define LV_BUILD_EXAMPLES 1  // Thay đổi từ 0 -> 1
+#define LV_BUILD_EXAMPLES 0  // Disable examples để tránh lỗi compile
 
 /*===================
  * DEMO USAGE
