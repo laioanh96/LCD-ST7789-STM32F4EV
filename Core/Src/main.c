@@ -23,24 +23,19 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <ST7789.h>
 
-#include "bitmap.h"
-#include "fonts.h"
-
-#include "lvgl.h"
 #include "stdio.h"
 #include "stdlib.h"  // Thêm cho malloc/free
 
 // Include LVGL examples
 #include "examples/lv_examples.h"
+#include "home_display.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
 /* USER CODE END PTD */
-
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 /* USER CODE END PD */
@@ -80,8 +75,8 @@ void StartLVGLTask(void const * argument);
 
 // LVGL display buffer - DOUBLE BUFFERING implementation
 static lv_disp_draw_buf_t draw_buf;
-static lv_color_t buf1[240 * 60];  // Buffer 1 = 28.8KB RAM 
-static lv_color_t buf2[240 * 60];  // Buffer 2 = 28.8KB RAM (Total: 57.6KB)
+static lv_color_t buf1[240 * 60];  // Buffer 1 = 19.2KB RAM
+static lv_color_t buf2[240 * 60];  // Buffer 2 = 19.2KB RAM (Total: 38.4KB)
 
 // Counter để đếm số lần flush được gọi
 static uint32_t flush_count = 0;
@@ -90,7 +85,15 @@ static uint8_t current_buffer = 1;  // Track buffer hiện tại (1 hoặc 2)
 // DMA transfer completed flag
 static volatile uint8_t dma_transfer_complete = 1;
 
-// LVGL flush callback function - WITH DMA SUPPORT
+// DMA TX Complete Callback
+void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+    if(hspi->Instance == SPI2) {
+        dma_transfer_complete = 1;
+    }
+}
+
+// LVGL flush callback function - CONDITIONAL DMA/BLOCKING
 void my_disp_flush(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_color_t * color_p)
 {
     // Tính toán kích thước area
@@ -99,16 +102,6 @@ void my_disp_flush(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_color_t 
     
     // Cast LVGL color buffer về uint16_t cho ST7789
     uint16_t * pixel_data = (uint16_t *)color_p;
-    
-    // Debug: Đếm số lần flush + track buffer
-    flush_count++;
-    
-    // Xác định buffer nào đang được sử dụng
-    if(color_p == (lv_color_t*)buf1) {
-        current_buffer = 1;
-    } else if(color_p == (lv_color_t*)buf2) {
-        current_buffer = 2;
-    }
     
     // Wait for previous DMA transfer to complete
     while(!dma_transfer_complete) {
@@ -119,10 +112,7 @@ void my_disp_flush(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_color_t 
     dma_transfer_complete = 0;
     ST7789_DrawImage(area->x1, area->y1, width, height, pixel_data);
     
-    // For now, use blocking mode until DMA callback is implemented
-    dma_transfer_complete = 1;
-    
-    // Báo cho LVGL biết đã flush xong - LVGL sẽ tự switch buffer
+    // Báo cho LVGL biết đã flush xong
     lv_disp_flush_ready(disp_drv);
 }
 
@@ -137,45 +127,73 @@ void my_disp_flush(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_color_t 
 static uint32_t last_key = 0;
 static lv_indev_state_t last_state = LV_INDEV_STATE_REL;
 
-// Function to read button states
-uint32_t button_read(void)
-{
-    // Check each button (active LOW với pull-up)
-    if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_0) == GPIO_PIN_RESET) return BTN_UP;
-    if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_1) == GPIO_PIN_RESET) return BTN_DOWN;
-    if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_2) == GPIO_PIN_RESET) return BTN_LEFT;
-    if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_3) == GPIO_PIN_RESET) return BTN_RIGHT;
-    if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_4) == GPIO_PIN_RESET) return BTN_ENTER;
-    
-    return 0xFF; // No button pressed
-}
-
+//// Function to read button states
+//uint32_t button_read(void)
+//{
+//    // Check each button (active LOW với pull-up)
+//    if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_0) == GPIO_PIN_RESET) return BTN_UP;
+//    if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_1) == GPIO_PIN_RESET) return BTN_DOWN;
+//    if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_2) == GPIO_PIN_RESET) return BTN_LEFT;
+//    if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_3) == GPIO_PIN_RESET) return BTN_RIGHT;
+//    if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_4) == GPIO_PIN_RESET) return BTN_ENTER;
+//
+//    return 0xFF; // No button pressed
+//}
+//
 // LVGL input device read callback
 void keypad_read(lv_indev_drv_t * indev_drv, lv_indev_data_t * data)
 {
-    static uint32_t last_btn = 0xFF;
-    uint32_t btn_pressed = button_read();
-    
-    if(btn_pressed != 0xFF) {
-        // Button is pressed
-        data->state = LV_INDEV_STATE_PR;
-        last_btn = btn_pressed;
-        
-        // Convert to LVGL keys
-        switch(btn_pressed) {
-            case BTN_UP:    data->key = LV_KEY_UP;    break;
-            case BTN_DOWN:  data->key = LV_KEY_DOWN;  break;
-            case BTN_LEFT:  data->key = LV_KEY_LEFT;  break;
-            case BTN_RIGHT: data->key = LV_KEY_RIGHT; break;
-            case BTN_ENTER: data->key = LV_KEY_ENTER; break;
-            default:        data->key = 0;           break;
-        }
-    } else {
-        // No button pressed
-        data->state = LV_INDEV_STATE_REL;
-        data->key = 0;
-    }
+  //  static uint32_t last_btn = 0xFF;
+  //  uint32_t btn_pressed = button_read();
+
+  //  if(btn_pressed != 0xFF) {
+  //      // Button is pressed
+  //      data->state = LV_INDEV_STATE_PR;
+  //      last_btn = btn_pressed;
+
+  //      // Convert to LVGL keys
+  //      switch(btn_pressed) {
+  //          case BTN_UP:    data->key = LV_KEY_UP;    break;
+  //          case BTN_DOWN:  data->key = LV_KEY_DOWN;  break;
+  //          case BTN_LEFT:  data->key = LV_KEY_LEFT;  break;
+  //          case BTN_RIGHT: data->key = LV_KEY_RIGHT; break;
+  //          case BTN_ENTER: data->key = LV_KEY_ENTER; break;
+  //          default:        data->key = 0;           break;
+  //      }
+  //  } else {
+  //      // No button pressed
+  //      data->state = LV_INDEV_STATE_REL;
+  //      data->key = 0;
+  //  }
 }
+//
+//
+//
+//
+//
+//
+//// Event callback for back button
+//void back_button_event_cb(lv_event_t * e)
+//{
+//    // Clear current group
+//    lv_group_remove_all_objs(main_group);
+//
+//    // Delete current app screen
+//    if(app_screen) {
+//        lv_obj_del(app_screen);
+//        app_screen = NULL;
+//    }
+//
+//    // Recreate home screen objects in group
+//    for(int i = 0; i < 9; i++) {
+//        lv_obj_t * btn = lv_obj_get_child(home_screen, i);
+//        lv_group_add_obj(main_group, btn);
+//    }
+//
+//    // Show home screen
+//    lv_scr_load(home_screen);
+//    current_screen = home_screen;
+//}
 
 /* USER CODE END 0 */
 
@@ -496,15 +514,11 @@ void StartLVGLTask(void const * argument)
 {
   /* USER CODE BEGIN StartLVGLTask */
   
-  // Declare objects để dùng trong loop
-  lv_obj_t * screen_test;
-  lv_obj_t * color_label;
-  
   // Bước 1: Init LVGL
   lv_init();
 
   // Bước 2: Init display driver với DOUBLE BUFFERING
-  // buf1 = working buffer, buf2 = back buffer
+  // buf1 = working buffer, buf2 = back buffer  
   lv_disp_draw_buf_init(&draw_buf, buf1, buf2, 240 * 60);
 
   // Bước 3: Init display driver
@@ -526,109 +540,23 @@ void StartLVGLTask(void const * argument)
   );
   lv_disp_set_theme(lv_disp_get_default(), theme);
 
-  // Setup input device (keypad/buttons)  
-  static lv_indev_drv_t indev_drv;
-  lv_indev_drv_init(&indev_drv);       // Khởi tạo input driver
-  indev_drv.type = LV_INDEV_TYPE_KEYPAD; // Loại input: keypad
-  indev_drv.read_cb = keypad_read;     // Callback đ�?c button
-  lv_indev_t * indev = lv_indev_drv_register(&indev_drv);
+//  // Setup input device (keypad/buttons)
+//  static lv_indev_drv_t indev_drv;
+//  lv_indev_drv_init(&indev_drv);       // Khởi tạo input dtton
+//  lv_indev_t * indev = lv_indev_drv_register(&indev_drv);river
+//  indev_drv.type = LV_INDEV_TYPE_KEYPAD; // Loại input: keypad
+//  indev_drv.read_cb = keypad_read;     // Callback đ�?c bu
 
   // Tạo group cho input navigation
-  lv_group_t * g = lv_group_create();  // Tạo group để navigate
-  lv_indev_set_group(indev, g);        // Gán group cho input device
+//  main_group = lv_group_create();      // Tạo group để navigate
+//  lv_indev_set_group(indev, main_group); // Gán group cho input device
 
-  // Test màn hình chuyển màu: Xanh → �?�? → �?en
-  screen_test = lv_obj_create(lv_scr_act());
-  lv_obj_set_size(screen_test, 240, 240);  // Full screen
-  lv_obj_align(screen_test, LV_ALIGN_CENTER, 0, 0);
-  lv_obj_set_style_bg_color(screen_test, lv_color_hex(0x00ff00), LV_PART_MAIN); // Bắt đầu với màu xanh lá
-  lv_obj_set_style_bg_opa(screen_test, LV_OPA_COVER, LV_PART_MAIN);
-  lv_obj_set_style_border_width(screen_test, 0, LV_PART_MAIN); // Không vi�?n
+ // Create iPhone-like home screen
+ create_home_screen();
 
-  // Label hiển thị màu hiện tại
-  color_label = lv_label_create(screen_test);
-  lv_label_set_text(color_label, "GREEN");
-  lv_obj_set_style_text_color(color_label, lv_color_hex(0xffffff), LV_PART_MAIN); // Chữ trắng
-  lv_obj_align(color_label, LV_ALIGN_CENTER, 0, 0);
-  
-  // Test button với màu explicit trước
-  lv_obj_t * btn = lv_btn_create(lv_scr_act());
-
-  lv_obj_set_size(btn, 120, 50);
-  lv_obj_align(btn, LV_ALIGN_CENTER, 0, -30);
-  lv_obj_set_style_bg_color(btn, lv_color_hex(0x0080ff), LV_PART_MAIN); // Xanh dương
-  lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN);
-  
-  lv_obj_t * label = lv_label_create(btn);
-  lv_label_set_text(label, "Test Button");
-  lv_obj_center(label);
-  
-  // Thêm vào group để có thể focus
-  lv_group_add_obj(g, btn);
-
-  // Test đơn giản - arc với manual animation
-  lv_obj_t * arc = lv_arc_create(lv_scr_act());
-  lv_obj_set_size(arc, 100, 100);
-  lv_obj_center(arc);
-  lv_arc_set_bg_angles(arc, 0, 360);  // Background full circle
-  lv_arc_set_angles(arc, 0, 60);      // Foreground arc
-  
-  // Thêm màu sắc cho arc
-  lv_obj_set_style_arc_color(arc, lv_color_hex(0x00ff00), LV_PART_INDICATOR); // Xanh lá
-  lv_obj_set_style_arc_width(arc, 8, LV_PART_INDICATOR);
-  
-  // Animation counter
-  static int16_t arc_angle = 0;
-  
-  // Color test variables
-  static uint32_t color_change_counter = 0;
-  static uint8_t current_color = 0; // 0=Green, 1=Red, 2=Black
-  
   /* Infinite loop */
   for(;;)
   {
-    // Manual animation cho arc - tạo hiệu ứng spinner
-    arc_angle += 3;  // Tăng 3 độ mỗi lần
-    if(arc_angle >= 360) arc_angle = 0;
-    lv_arc_set_angles(arc, arc_angle, arc_angle + 60);
-    
-    // Test chuyển màu màn hình mỗi 2 giây (200 loops * 10ms)
-    color_change_counter++;
-    if(color_change_counter >= 200) {
-      color_change_counter = 0;
-      current_color++;
-      if(current_color > 2) current_color = 0;
-      
-      // Reset flush counter trước khi đổi màu
-      flush_count = 0;
-      
-      switch(current_color) {
-        case 0: // Green
-          lv_obj_set_style_bg_color(screen_test, lv_color_hex(0x00ff00), LV_PART_MAIN);
-          lv_label_set_text(color_label, "GREEN");
-          break;
-        case 1: // Red  
-          lv_obj_set_style_bg_color(screen_test, lv_color_hex(0xff0000), LV_PART_MAIN);
-          lv_label_set_text(color_label, "RED");
-          break;
-        case 2: // Black
-          lv_obj_set_style_bg_color(screen_test, lv_color_hex(0x000000), LV_PART_MAIN);
-          lv_label_set_text(color_label, "BLACK");
-          break;
-      }
-      
-      // Force LVGL update ngay lập tức
-      lv_obj_invalidate(screen_test);
-      
-      // �?ợi một chút để flush hoàn thành rồi update label với double buffer info
-      osDelay(50);
-      char debug_text[60];
-      sprintf(debug_text, "%s (Flush:%lu Buf:%d)", 
-              (current_color == 0) ? "GREEN" : (current_color == 1) ? "RED" : "BLACK",
-              flush_count, current_buffer);
-      lv_label_set_text(color_label, debug_text);
-    }
-    
     // Chạy LVGL timer handler
     lv_timer_handler();
     osDelay(10);  // 50ms cho animation mượt

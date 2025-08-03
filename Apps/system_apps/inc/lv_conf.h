@@ -27,7 +27,7 @@
 #define LV_COLOR_DEPTH 16
 
 /*Swap the 2 bytes of RGB565 color. Useful if the display has an 8-bit interface (e.g. SPI)*/
-#define LV_COLOR_16_SWAP 1  // Enable byte swap cho SPI display
+#define LV_COLOR_16_SWAP 0
 
 /*Enable features to draw on transparent background.
  *It's required if opa, and transform_* style properties are used.
@@ -46,10 +46,10 @@
  *=========================*/
 
 /*1: use custom malloc/free, 0: use the built-in `lv_mem_alloc()` and `lv_mem_free()`*/
-#define LV_MEM_CUSTOM 1  // Thay đổi từ 0 -> 1 để dùng system malloc
+#define LV_MEM_CUSTOM 0
 #if LV_MEM_CUSTOM == 0
     /*Size of the memory available for `lv_mem_alloc()` in bytes (>= 2kB)*/
-    #define LV_MEM_SIZE (1U * 1024U)          /*[bytes] - Giảm từ 2KB xuống 1KB*/
+    #define LV_MEM_SIZE (16U * 1024U)          /*[bytes]*/
 
     /*Set an address for the memory pool instead of allocating it as a normal array. Can be in external SRAM too.*/
     #define LV_MEM_ADR 0     /*0: unused*/
@@ -99,12 +99,12 @@
 
 /*Enable complex draw engine.
  *Required to draw shadow, gradient, rounded corners, circles, arc, skew, image transformations or any masks*/
-#define LV_DRAW_COMPLEX 1  // Enable cho spinner và arc drawing
+#define LV_DRAW_COMPLEX 1
 #if LV_DRAW_COMPLEX != 0
 
     /*Allow buffering some shadow calculation.
     *LV_DRAW_COMPLEX should be 1 also to enable shadow drawing*/
-    #define LV_DRAW_SW_SHADOW_CACHE_SIZE 0
+    #define LV_DRAW_SW_SHADOW_CACHE_SIZE 4
 
     /*Set number of maximally cached circle data.
     *The circumference of 1/4 circle are saved for anti-aliasing
@@ -298,10 +298,10 @@
  *The fonts are compressed by https://github.com/lvgl/lv_font_compress
  *Set LV_FONT_DEFAULT in all sub-theme to point the font used by default. */
 #define LV_FONT_MONTSERRAT_8  0
-#define LV_FONT_MONTSERRAT_10 0
-#define LV_FONT_MONTSERRAT_12 0
+#define LV_FONT_MONTSERRAT_10 1
+#define LV_FONT_MONTSERRAT_12 1
 #define LV_FONT_MONTSERRAT_14 1
-#define LV_FONT_MONTSERRAT_16 0
+#define LV_FONT_MONTSERRAT_16 1
 #define LV_FONT_MONTSERRAT_18 0
 #define LV_FONT_MONTSERRAT_20 0
 #define LV_FONT_MONTSERRAT_22 0
@@ -335,7 +335,7 @@
 #define LV_FONT_CUSTOM_DECLARE
 
 /*Always set a default font*/
-#define LV_FONT_DEFAULT &lv_font_montserrat_14
+#define LV_FONT_DEFAULT &lv_font_montserrat_10
 
 /*Enable handling large font and/or fonts with a lot of characters.
  *The limit depends on the font size, font face and bpp.
@@ -408,9 +408,9 @@
 
 /*Documentation of the widgets: https://docs.lvgl.io/latest/en/html/widgets/index.html*/
 
-#define LV_USE_ARC        1  // Enable ARC cho spinner
+#define LV_USE_ARC        1
 #define LV_USE_ANIMIMG    0
-#define LV_USE_BAR        0  // Disable BAR để giảm tải
+#define LV_USE_BAR        0
 #define LV_USE_BTN        1
 #define LV_USE_BTNMATRIX  0
 #define LV_USE_CANVAS     0
@@ -472,7 +472,7 @@
 #define LV_USE_METER      0
 #define LV_USE_MSGBOX     0
 #define LV_USE_SPINBOX    0
-#define LV_USE_SPINNER    1  // Enable spinner cho example
+#define LV_USE_SPINNER    1
 #define LV_USE_TABVIEW    0
 #define LV_USE_TILEVIEW   0
 #define LV_USE_WIN        0
@@ -487,7 +487,7 @@
  *----------*/
 
 /*A simple, impressive and very complete theme*/
-#define LV_USE_THEME_DEFAULT 1  // Enable default theme
+#define LV_USE_THEME_DEFAULT 1
 #if LV_USE_THEME_DEFAULT
 
     /*0: Light mode; 1: Dark mode*/
@@ -642,7 +642,7 @@
 *==================*/
 
 /*Enable the examples to be built with the library*/
-#define LV_BUILD_EXAMPLES 0  // Disable examples để tránh lỗi compile
+#define LV_BUILD_EXAMPLES 0
 
 /*===================
  * DEMO USAGE
