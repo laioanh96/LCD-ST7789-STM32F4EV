@@ -1,7 +1,7 @@
 /*
   ******************************************************************************
   * @file 			( фаил ):   ST7789.h
-  * @brief 		( описание ):
+  * @brief 		( описание ):  ST7789 LCD Driver Header File - File Header điều khiển LCD ST7789
   ******************************************************************************
   * @attention 	( внимание ):	 author: Golinskiy Konstantin	e-mail: golinskiy.konstantin@gmail.com
   ******************************************************************************
@@ -18,8 +18,11 @@
 extern C {
 #endif
 
-// Обязательно нужен #include "main.h"
+// Обязательно нужен #include "main.h" 
+// Must include main.h - Bắt buộc phải include main.h
 // чтоб отдельно не подключать файлы связанные с МК и стандартными библиотеками
+// so we don't need to separately include files related to MCU and standard libraries
+// để không cần phải riêng lẻ include các file liên quan đến vi điều khiển và thư viện chuẩn
 
 #include "main.h"
 #include "fonts.h"
@@ -34,32 +37,55 @@ extern C {
 //#######  SETUP  ##############################################################################################
 
 		//==== выбераем через что будем отправлять через HAL или CMSIS(быстрее) ==================
+		//==== choose how to send data: through HAL or CMSIS (faster) ==================
+		//==== chọn cách gửi dữ liệu: qua HAL hoặc CMSIS (nhanh hơn) ==================
 		//-- нужное оставляем другое коментируем ( важно должно быть только один выбран )---------
+		//-- keep what you need, comment out the rest (important: only one should be selected) ---------
+		//-- giữ lại cái cần, comment cái còn lại (quan trọng: chỉ được chọn một) ---------
 
 			// указываем порт SPI для CMSIS ( быстро )-------
+			// specify SPI port for CMSIS (fast) -------
+			// chỉ định cổng SPI cho CMSIS (nhanh) -------
 			// так как у разных МК разные регистры то в функциях корректируем под свой МК
+			// since different MCUs have different registers, we adjust in functions for your MCU
+			// vì các vi điều khiển khác nhau có thanh ghi khác nhau nên ta điều chỉnh trong hàm cho MCU của bạn
 			// на данный момент есть реализация на серию F1 F4 H7 для выбора серии в функциях
+			// currently there are implementations for F1 F4 H7 series for series selection in functions
+			// hiện tại có triển khai cho dòng F1 F4 H7 để chọn dòng trong các hàm
 			//	void ST7789_SendCmd(uint8_t Cmd);
 			//	void ST7789_SendData(uint8_t Data );
 			//	void ST7789_SendDataMASS(uint8_t* buff, size_t buff_size);
 			// комментируем и раскомментируем то что нам нужно, также там же редактируем под свой МК если не работает
+			// comment and uncomment what we need, also edit there for your MCU if it doesn't work
+			// comment và uncomment cái cần, cũng chỉnh sửa ở đó cho MCU của bạn nếu không hoạt động
 			//#define 	ST7789_SPI_CMSIS 	SPI2
 			//-----------------------------------------------
 
 			// указываем порт SPI для HAL ( медлено )--------
+			// specify SPI port for HAL (slow) --------
+			// chỉ định cổng SPI cho HAL (chậm) --------
 			#define 	ST7789_SPI_HAL 		hspi2
+			#define 	DMA_MODULE_USED 	1
 			//-----------------------------------------------
 
 		//============================================================================
 
 			// выбираем как выводить информацию через буфер кадра или попиксельно ( 1-буфер кадра, 0-попиксельный вывод ) -----
+		// choose how to display information: through frame buffer or pixel by pixel (1-frame buffer, 0-pixel by pixel output) -----
+		// chọn cách hiển thị thông tin: qua frame buffer hoặc từng pixel (1-frame buffer, 0-xuất từng pixel) -----
 		// через буфер быстре если много информации обнавлять за один раз ( требует много оперативки для массива )
+		// through buffer is faster if a lot of information is updated at once (requires a lot of RAM for array)
+		// qua buffer nhanh hơn nếu nhiều thông tin được cập nhật cùng lúc (cần nhiều RAM cho mảng)
 		// по пиксельно рисует онлайн буз буферра если информация обновляеться немного то выгодно испотзовать данный режим
+		// pixel by pixel draws online without buffer, if information is updated little then it's beneficial to use this mode
+		// từng pixel vẽ trực tuyến không có buffer, nếu thông tin cập nhật ít thì có lợi khi sử dụng chế độ này
 			#define FRAME_BUFFER				0
 		//-----------------------------------------------------------------------------------------------------------------
 
 
 		//=== указываем порты ( если в кубе назвали их DC RES CS то тогда нечего указывать не нужно )
+		//=== specify ports (if in Cube they are named DC RES CS then nothing needs to be specified)
+		//=== chỉ định các cổng (nếu trong Cube chúng được đặt tên DC RES CS thì không cần chỉ định gì)
 		#if defined (DC_GPIO_Port)
 		#else
 			#define DC_GPIO_Port	GPIOA
@@ -73,7 +99,9 @@ extern C {
 		#endif
 
 		//--  If you use the CS port to select the device, then uncomment the line below ------------
+		//--  Nếu bạn sử dụng cổng CS để chọn thiết bị, hãy bỏ comment dòng bên dưới ------------
 		// If you have only one device, it is better to tie the CS pin to ground (or set GND on
+		// Nếu bạn chỉ có một thiết bị, tốt hơn là nối chân CS xuống đất (hoặc đặt GND trên
 		// #define CS_PORT
 
 		//----------------------------------------------------------------------------------------
@@ -88,7 +116,11 @@ extern C {
 		//=============================================================================
 
 		//==  выбираем дисплей: =======================================================
+		//==  choose display: =======================================================
+		//==  chọn màn hình: =======================================================
 		//-- нужное оставляем другое коментируем ( важно должно быть только один выбран )---------
+		//-- keep what you need, comment out the rest (important: only one should be selected) ---------
+		//-- giữ lại cái cần, comment cái còn lại (quan trọng: chỉ được chọn một) ---------
 
 		//#define	ST7789_IS_76X284		// 2.25" 76 x 284 ST7789
 		//#define	ST7789_IS_135X240		// 1.14" 135 x 240 ST7789
@@ -116,6 +148,8 @@ extern uint16_t ST7789_Y_Start;
 #define PI 	3.14159265
 
 //--- готовые цвета ------------------------------
+//--- predefined colors ------------------------------
+//--- màu sắc định sẵn ------------------------------
 #define   	ST7789_BLACK   			0x0000
 #define   	ST7789_BLUE    			0x001F
 #define   	ST7789_RED     			0xF800
@@ -127,6 +161,8 @@ extern uint16_t ST7789_Y_Start;
 //------------------------------------------------
 
 //-- Битовые маски настройки цветности ST7789 ----
+//-- Bit masks for ST7789 color settings ----
+//-- Mặt nạ bit cho cài đặt màu sắc ST7789 ----
 #define ST7789_ColorMode_65K    	0x50
 #define ST7789_ColorMode_262K   	0x60
 #define ST7789_ColorMode_12bit  	0x03
@@ -164,8 +200,11 @@ extern uint16_t ST7789_Y_Start;
 
 
 //###  параметры дисплея 1.3" 240 x 240 ST7789 ###################################
+//###  display parameters 1.3" 240 x 240 ST7789 ###################################
+//###  thông số màn hình 1.3" 240 x 240 ST7789 ###################################
 
 	// 1.3" 240 x 240 ST7789  display, default orientation
+	// 1.3" 240 x 240 ST7789  màn hình, hướng mặc định
 
 #ifdef ST7789_IS_240X240
 
@@ -183,8 +222,11 @@ extern uint16_t ST7789_Y_Start;
 //##############################################################################
 
 //###  параметры дисплея 2.25" 76 x 284 ST7789 ###################################
+//###  display parameters 2.25" 76 x 284 ST7789 ###################################
+//###  thông số màn hình 2.25" 76 x 284 ST7789 ###################################
 
 	// 2.25" 76 x 284 ST7789  display, default orientation
+	// 2.25" 76 x 284 ST7789  màn hình, hướng mặc định
 
 #ifdef ST7789_IS_76X284
 
@@ -202,8 +244,11 @@ extern uint16_t ST7789_Y_Start;
 //##############################################################################
 
 //###  параметры дисплея 1.14" 135 x 240 ST7789 ###################################
+//###  display parameters 1.14" 135 x 240 ST7789 ###################################
+//###  thông số màn hình 1.14" 135 x 240 ST7789 ###################################
 
 	// 1.14" 135 x 240 ST7789  display, default orientation
+	// 1.14" 135 x 240 ST7789  màn hình, hướng mặc định
 
 #ifdef ST7789_IS_135X240
 
@@ -223,8 +268,11 @@ extern uint16_t ST7789_Y_Start;
 
 
 //###  параметры дисплея 1.47" 172 x 320 ST7789 ###################################
+//###  display parameters 1.47" 172 x 320 ST7789 ###################################
+//###  thông số màn hình 1.47" 172 x 320 ST7789 ###################################
 
 	// 1.47" 172 x 320 ST7789 display, default orientation
+	// 1.47" 172 x 320 ST7789 màn hình, hướng mặc định
 
 #ifdef ST7789_IS_172X320
 
@@ -244,8 +292,11 @@ extern uint16_t ST7789_Y_Start;
 
 
 //###  параметры дисплея 1.69" 240 x 280 ST7789 ###################################
+//###  display parameters 1.69" 240 x 280 ST7789 ###################################
+//###  thông số màn hình 1.69" 240 x 280 ST7789 ###################################
 
 	// 1.69" 240 x 280 ST7789  display, default orientation
+	// 1.69" 240 x 280 ST7789  màn hình, hướng mặc định
 
 #ifdef ST7789_IS_240X280
 
@@ -265,8 +316,11 @@ extern uint16_t ST7789_Y_Start;
 
 
 //###  параметры дисплея 2" 240 x 320 ST7789 ###################################
+//###  display parameters 2" 240 x 320 ST7789 ###################################
+//###  thông số màn hình 2" 240 x 320 ST7789 ###################################
 
 	// 2" 240 x 320 ST7789  display, default orientation
+	// 2" 240 x 320 ST7789  màn hình, hướng mặc định
 
 #ifdef ST7789_IS_240X320
 

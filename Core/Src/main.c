@@ -36,6 +36,7 @@
 /* USER CODE BEGIN PTD */
 
 /* USER CODE END PTD */
+
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 /* USER CODE END PD */
@@ -49,7 +50,7 @@
 RTC_HandleTypeDef hrtc;
 
 SPI_HandleTypeDef hspi2;
-DMA_HandleTypeDef hdma_spi2_tx;  // DMA cho SPI2 TX
+DMA_HandleTypeDef hdma_spi2_tx;
 
 osThreadId blinkLEDTaskHandle;
 osThreadId lvglTaskHandle;
@@ -60,7 +61,7 @@ osThreadId lvglTaskHandle;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_DMA_Init(void);  // DMA initialization
+static void MX_DMA_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_RTC_Init(void);
 void StartBlinkTask(void const * argument);
@@ -78,7 +79,7 @@ static lv_disp_draw_buf_t draw_buf;
 static lv_color_t buf1[240 * 60];  // Buffer 1 = 19.2KB RAM
 static lv_color_t buf2[240 * 60];  // Buffer 2 = 19.2KB RAM (Total: 38.4KB)
 
-// Counter để đếm số lần flush được gọi
+// Counter để đếm số lần flush được g�?i
 static uint32_t flush_count = 0;
 static uint8_t current_buffer = 1;  // Track buffer hiện tại (1 hoặc 2)
 
@@ -102,7 +103,7 @@ void my_disp_flush(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_color_t 
     
     // Cast LVGL color buffer về uint16_t cho ST7789
     uint16_t * pixel_data = (uint16_t *)color_p;
-    
+#if DMA_MODULE_USED    
     // Wait for previous DMA transfer to complete
     while(!dma_transfer_complete) {
         osDelay(1);
@@ -110,6 +111,7 @@ void my_disp_flush(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_color_t 
     
     // Start DMA transfer - NON-BLOCKING
     dma_transfer_complete = 0;
+#endif
     ST7789_DrawImage(area->x1, area->y1, width, height, pixel_data);
     
     // Báo cho LVGL biết đã flush xong
@@ -225,7 +227,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_DMA_Init();  // DMA phải init TRƯỚC SPI
+  MX_DMA_Init();
   MX_SPI2_Init();
   MX_RTC_Init();
   /* USER CODE BEGIN 2 */
@@ -397,25 +399,6 @@ static void MX_SPI2_Init(void)
   {
     Error_Handler();
   }
-  
-  /* Configure DMA for SPI2 TX */
-  hdma_spi2_tx.Instance = DMA1_Stream4;
-  hdma_spi2_tx.Init.Channel = DMA_CHANNEL_0;
-  hdma_spi2_tx.Init.Direction = DMA_MEMORY_TO_PERIPH;
-  hdma_spi2_tx.Init.PeriphInc = DMA_PINC_DISABLE;
-  hdma_spi2_tx.Init.MemInc = DMA_MINC_ENABLE;
-  hdma_spi2_tx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
-  hdma_spi2_tx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
-  hdma_spi2_tx.Init.Mode = DMA_NORMAL;
-  hdma_spi2_tx.Init.Priority = DMA_PRIORITY_HIGH;
-  hdma_spi2_tx.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
-  if (HAL_DMA_Init(&hdma_spi2_tx) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  
-  /* Link DMA to SPI - Compatible way */
-  hspi2.hdmatx = &hdma_spi2_tx;
   /* USER CODE BEGIN SPI2_Init 2 */
 
   /* USER CODE END SPI2_Init 2 */
@@ -470,13 +453,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /* Configure Button pins as inputs */
-  /*UP button: PC0, DOWN button: PC1, LEFT: PC2, RIGHT: PC3, ENTER: PC4*/
-  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_4;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;  // Pull-up, button press = LOW
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
 }
 

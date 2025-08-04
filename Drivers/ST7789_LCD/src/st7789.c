@@ -245,7 +245,7 @@ __inline static void ST7789_SendCmd(uint8_t Cmd){
 
 		 // pin DC LOW
 		 HAL_GPIO_WritePin(DC_GPIO_Port, DC_Pin, GPIO_PIN_RESET);
-		#ifdef HAL_DMA_MODULE_ENABLED
+		#if DMA_MODULE_USED
 			// Используем DMA для передачи данных
 			HAL_SPI_Transmit_DMA(&ST7789_SPI_HAL, &Cmd, 1);
 		#else
@@ -337,7 +337,7 @@ __inline static void ST7789_SendData(uint8_t Data ){
 
 	//-- если захотим переделать под HAL ------------------
 	#ifdef ST7789_SPI_HAL
-		#ifdef HAL_DMA_MODULE_ENABLED
+		#if DMA_MODULE_USED
 			// Используем DMA для передачи данных
 			HAL_SPI_Transmit_DMA(&ST7789_SPI_HAL, &Data, 1);
 		#else
@@ -422,7 +422,7 @@ __inline static void ST7789_SendDataMASS(uint8_t* buff, size_t buff_size){
 	#ifdef ST7789_SPI_HAL
 
 		if( buff_size <= 0xFFFF ){
-		#ifdef HAL_DMA_MODULE_ENABLED
+		#if DMA_MODULE_USED
 			// Используем DMA для передачи данных
 			HAL_SPI_Transmit_DMA(&ST7789_SPI_HAL, buff, buff_size);
 		#else
@@ -431,7 +431,7 @@ __inline static void ST7789_SendDataMASS(uint8_t* buff, size_t buff_size){
 		}
 		else{
 			while( buff_size > 0xFFFF ){
-			#ifdef HAL_DMA_MODULE_ENABLED
+			#if DMA_MODULE_USED
 				// Используем DMA для передачи данных
 				HAL_SPI_Transmit_DMA(&ST7789_SPI_HAL, buff, 0xFFFF);
 			#else
@@ -440,7 +440,7 @@ __inline static void ST7789_SendDataMASS(uint8_t* buff, size_t buff_size){
 				buff_size-=0xFFFF;
 				buff+=0xFFFF;
 			}
-			#ifdef HAL_DMA_MODULE_ENABLED
+			#if DMA_MODULE_USED
 				// Используем DMA для передачи данных
 				HAL_SPI_Transmit_DMA(&ST7789_SPI_HAL, buff, buff_size);
 			#else

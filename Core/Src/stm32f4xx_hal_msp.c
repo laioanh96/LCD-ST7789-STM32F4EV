@@ -25,6 +25,7 @@
 
 extern DMA_HandleTypeDef hdma_spi2_tx;
 /* USER CODE END Includes */
+extern DMA_HandleTypeDef hdma_spi2_tx;
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN TD */
