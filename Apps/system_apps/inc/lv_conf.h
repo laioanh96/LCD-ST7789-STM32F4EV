@@ -110,6 +110,32 @@
 #define LV_DPI_DEF 130     /*[px/inch]*/
 
 /*=======================
+ * INPUT DEVICE SETTINGS - CÀI ĐẶT THIẾT BỊ ĐẦU VÀO
+ *=======================*/
+
+/*Enable input device groups*/
+/*Kích hoạt nhóm thiết bị đầu vào*/
+#define LV_USE_GROUP 1
+#if LV_USE_GROUP
+    /*Focus on object by pressing keys. Used by group.*/
+    /*Focus vào object bằng cách nhấn phím. Được sử dụng bởi group.*/
+    #define LV_USE_FOCUS 1
+#endif
+
+/*1: Enable input device feedback*/
+/*1: Kích hoạt phản hồi thiết bị đầu vào*/
+#define LV_USE_INDEV_FEEDBACK 1
+
+/*1: Enable animations*/
+/*1: Kích hoạt animation*/
+#define LV_USE_ANIMATION 1
+#if LV_USE_ANIMATION
+    /*Declare the type of the user data of animations (can be `void *`, `int`, `struct`, etc.)*/
+    /*Khai báo kiểu dữ liệu user của animations (có thể là `void *`, `int`, `struct`, v.v.)*/
+    #define LV_ANIM_USER_DATA_TYPE void*
+#endif
+
+/*=======================
  * FEATURE CONFIGURATION - CẤU HÌNH TÍNH NĂNG
  *=======================*/
 
@@ -473,7 +499,7 @@
  *Để tắt, đặt giá trị <= 0*/
 #define LV_TXT_LINE_BREAK_LONG_LEN 0
 
-/*Minimum number of characters in a long word to put on a line before a break.
+/*Minimum number of characters in a long word to put
  *Depends on LV_TXT_LINE_BREAK_LONG_LEN.*/
 /*Số ký tự tối thiểu trong một từ dài để đặt trên một dòng trước khi ngắt.
  *Phụ thuộc vào LV_TXT_LINE_BREAK_LONG_LEN.*/

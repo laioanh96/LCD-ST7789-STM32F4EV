@@ -1,0 +1,43 @@
+/**
+ * HƯỚNG DẪN SỬ DỤNG ĐIỀU KHIỂN PHÍM
+ * BUTTON NAVIGATION USAGE GUIDE
+ * 
+ * Kết nối phần cứng - Hardware Connections:
+ * =======================================
+ * PA0 - Nút UP (Button UP)     - Kéo xuống GND khi nhấn
+ * PA1 - Nút DOWN (Button DOWN) - Kéo xuống GND khi nhấn  
+ * PA2 - Nút OK (Button OK)     - Kéo xuống GND khi nhấn
+ * 
+ * Tất cả các nút đều có pull-up nội bộ
+ * All buttons have internal pull-up
+ * 
+ * Cách sử dụng - How to Use:
+ * ==========================
+ * - Nhấn UP: Di chuyển lên icon trước đó
+ * - Press UP: Move to previous icon
+ * 
+ * - Nhấn DOWN: Di chuyển xuống icon tiếp theo  
+ * - Press DOWN: Move to next icon
+ * 
+ * - Nhấn OK: Chọn icon hiện tại
+ * - Press OK: Select current icon
+ * 
+ * Hiệu ứng thị giác - Visual Effects:
+ * ===================================
+ * - Icon được chọn sẽ có viền trắng sáng
+ * - Selected icon will have bright white outline
+ * 
+ * - Navigation theo thứ tự: 0->1->2->3->4->5->6->7->8->0
+ * - Navigation order: 0->1->2->3->4->5->6->7->8->0
+ * 
+ * Tùy chỉnh - Customization:
+ * ==========================
+ * - Thay đổi chân GPIO trong input_handler.h
+ * - Change GPIO pins in input_handler.h
+ * 
+ * - Thay đổi thời gian debounce (mặc định 50ms)
+ * - Change debounce time (default 50ms)
+ * 
+ * - Thay đổi màu viền focus trong home_display.c
+ * - Change focus outline color in home_display.c
+ */

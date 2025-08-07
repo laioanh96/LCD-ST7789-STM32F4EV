@@ -30,6 +30,7 @@
 // Include LVGL examples
 #include "examples/lv_examples.h"
 #include "home_display.h"
+#include "log.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -52,6 +53,8 @@ RTC_HandleTypeDef hrtc;
 SPI_HandleTypeDef hspi2;
 DMA_HandleTypeDef hdma_spi2_tx;
 
+UART_HandleTypeDef huart1;
+
 osThreadId blinkLEDTaskHandle;
 osThreadId lvglTaskHandle;
 /* USER CODE BEGIN PV */
@@ -64,6 +67,7 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_RTC_Init(void);
+static void MX_USART1_UART_Init(void);
 void StartBlinkTask(void const * argument);
 void StartLVGLTask(void const * argument);
 
@@ -101,7 +105,7 @@ void my_disp_flush(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_color_t 
     int32_t width = area->x2 - area->x1 + 1;
     int32_t height = area->y2 - area->y1 + 1;
     
-    // Cast LVGL color buffer về uint16_t cho ST7789
+    // Cast LVGL color buffer v�? uint16_t cho ST7789
     uint16_t * pixel_data = (uint16_t *)color_p;
 #if DMA_MODULE_USED    
     // Wait for previous DMA transfer to complete
@@ -230,7 +234,9 @@ int main(void)
   MX_DMA_Init();
   MX_SPI2_Init();
   MX_RTC_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
+  log_init();
 	// ST7789 display initialization procedure
 	ST7789_Init();
 	// Setting the display rotation
@@ -406,10 +412,44 @@ static void MX_SPI2_Init(void)
 }
 
 /**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 115200;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
+
+}
+
+/**
   * Enable DMA controller clock
   */
 static void MX_DMA_Init(void)
 {
+
   /* DMA controller clock enable */
   __HAL_RCC_DMA1_CLK_ENABLE();
 
@@ -417,6 +457,7 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream4_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
+
 }
 
 /**
@@ -435,13 +476,13 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_15, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6|GPIO_PIN_7, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_11, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PA6 PA7 PA15 */
-  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_15;
+  /*Configure GPIO pins : PA6 PA7 */
+  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -473,7 +514,7 @@ void StartBlinkTask(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_15); // Enable LED debug
+//    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_15); // Enable LED debug
     osDelay(500);
   }
   /* USER CODE END 5 */
@@ -516,19 +557,10 @@ void StartLVGLTask(void const * argument)
   );
   lv_disp_set_theme(lv_disp_get_default(), theme);
 
-//  // Setup input device (keypad/buttons)
-//  static lv_indev_drv_t indev_drv;
-//  lv_indev_drv_init(&indev_drv);       // Khởi tạo input dtton
-//  lv_indev_t * indev = lv_indev_drv_register(&indev_drv);river
-//  indev_drv.type = LV_INDEV_TYPE_KEYPAD; // Loại input: keypad
-//  indev_drv.read_cb = keypad_read;     // Callback đ�?c bu
-
-  // Tạo group cho input navigation
-//  main_group = lv_group_create();      // Tạo group để navigate
-//  lv_indev_set_group(indev, main_group); // Gán group cho input device
-
- // Create iPhone-like home screen
- create_home_screen();
+  // Initialize input handler first - Khởi tạo xử lý đầu vào trước
+  input_handler_init();
+  // Create iPhone-like home screen
+  create_home_screen();
 
   /* Infinite loop */
   for(;;)
