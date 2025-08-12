@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <string.h>
 #include "stm32f4xx_hal.h"
 
@@ -25,8 +26,8 @@ extern UART_HandleTypeDef huart1;
 // Configuration - Cấu hình
 #define LOG_UART_INSTANCE       huart1
 #define LOG_UART_BAUDRATE      115200
-#define LOG_BUFFER_SIZE        256
-#define LOG_MAX_LINE_LENGTH    128
+#define LOG_BUFFER_SIZE        512    // Increased from 256
+#define LOG_MAX_LINE_LENGTH    256    // Increased from 128
 
 // Enable/Disable logging - Bật/tắt logging
 #define LOG_ENABLE             1
@@ -109,11 +110,15 @@ typedef struct {
     uint16_t used_size;
     uint16_t free_size;
     uint32_t overflow_count;
+    uint32_t error_count;
     uint32_t total_bytes_sent;
 } log_status_t;
 
 void log_get_status(log_status_t* status);
 void log_reset_stats(void);
+void log_print_stats(void);
+void log_test_messages(void);
+void log_debug_message_assembly(void);
 
 #ifdef __cplusplus
 }

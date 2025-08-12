@@ -1,5 +1,16 @@
 {
     "files.associations": {
-        "st7789.h": "c"
+        "st7789.h": "c",
+        "cmsis_os.h": "c",
+        "home_display.h": "c",
+        "compare": "c",
+        "cstddef": "c",
+        "limits": "c",
+        "type_traits": "c",
+        "vector": "c",
+        "xmemory": "c",
+        "xstring": "c",
+        "xutility": "c",
+        "stm32f4xx_hal.h": "c"
     }
 }

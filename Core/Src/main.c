@@ -31,6 +31,11 @@
 #include "examples/lv_examples.h"
 #include "home_display.h"
 #include "log.h"
+#include "wifi_esp8266.h"  // Re-enabled for WiFi testing
+
+// Function prototypes - Khai báo hàm
+void wifi_test_demo(void);  // Re-enabled for WiFi testing
+void log_test_only(void);
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -54,6 +59,7 @@ SPI_HandleTypeDef hspi2;
 DMA_HandleTypeDef hdma_spi2_tx;
 
 UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart2;
 
 osThreadId blinkLEDTaskHandle;
 osThreadId lvglTaskHandle;
@@ -68,6 +74,7 @@ static void MX_DMA_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_RTC_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_USART2_UART_Init(void);
 void StartBlinkTask(void const * argument);
 void StartLVGLTask(void const * argument);
 
@@ -155,8 +162,14 @@ int main(void)
   MX_SPI2_Init();
   MX_RTC_Init();
   MX_USART1_UART_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   log_init();
+  
+  // Simple log test without WiFi
+  log_test_only();
+  
+  wifi_test_demo(); // Re-enabled for WiFi testing
 	// ST7789 display initialization procedure
 	ST7789_Init();
 	// Setting the display rotation
@@ -365,6 +378,39 @@ static void MX_USART1_UART_Init(void)
 }
 
 /**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
+
+}
+
+/**
   * Enable DMA controller clock
   */
 static void MX_DMA_Init(void)
@@ -418,6 +464,26 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+/**
+ * @brief Simple log test function - Test log đơn giản
+ */
+void log_test_only(void)
+{
+    // First test manual debug assembly
+    log_debug_message_assembly();
+    HAL_Delay(200);
+    
+    // Then test normal logging with simple messages
+    LOG_I("MAIN", "Simple test");
+    HAL_Delay(100);
+    
+    LOG_I("MAIN", "Test 123");
+    HAL_Delay(100);
+    
+    // Test the enhanced test function
+    log_test_messages();
+}
 
 /* USER CODE END 4 */
 
